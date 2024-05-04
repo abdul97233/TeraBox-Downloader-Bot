@@ -1,9 +1,16 @@
 <h1 align="center" id="title">Terabox Downloader Bot</h1>
 
 <p align="center"><img src="https://socialify.git.ci/abdul97233/TeraBox-Downloader-Bot/image?description=1&descriptionEditable=Telegram%20bot%20in%20Python%20enabling%20seamless%20file%20downloads%20from%20Terabox%20links.&font=Bitter&forks=1&issues=1&language=1&name=1&owner=1&pattern=Overlapping%20Hexagons&pulls=1&stargazers=1&theme=Dark" alt="TeraBox-Downloader-Bot" width="640" height="320" />
+<p id="description">Telegram bot in Python enabling seamless file downloads from Terabox links.</p>
 
+##
+![GitHub repo size](https://img.shields.io/github/repo-size/abdul97233/Terabox-Downloader-Bot?color=yellow)
+[![Telegram Bot](https://img.shields.io/badge/Telegram-Bot-blue.svg)](https://t.me/NTMtag)
+![GitHub](https://img.shields.io/github/license/abdul97233/Terabox-Downloader-Bot)
+[![Bot Support](https://img.shields.io/badge/File%20Sharing%20Bot-support%20group-blue)](https://t.me/ntmchat)
+[![Telegram Channel](https://img.shields.io/badge/Telegram-Channel-blue.svg)](https://t.me/ntmpro)
+![GitHub commit activity](https://img.shields.io/github/commit-activity/m/abdul97233/Terabox-Downloader-Bot)
 
-<p id="description">A telegram bot for downloading terabox videos fastly</p>
 
 <h2>🧐 Features</h2>
 
