@@ -1,6 +1,6 @@
 <h1 align="center" id="title">Terabox Downloader Bot</h1>
 
-<p align="center"><img src="![TeraBox-Downloader-Bot](https://socialify.git.ci/abdul97233/TeraBox-Downloader-Bot/image?description=1&descriptionEditable=Telegram%20bot%20in%20Python%20enabling%20seamless%20file%20downloads%20from%20Terabox%20links.&font=Bitter&forks=1&issues=1&language=1&name=1&owner=1&pattern=Overlapping%20Hexagons&pulls=1&stargazers=1&theme=Dark)" alt="project-image"></p>
+<p align="center"><img src="https://socialify.git.ci/abdul97233/TeraBox-Downloader-Bot/image?description=1&descriptionEditable=Telegram%20bot%20in%20Python%20enabling%20seamless%20file%20downloads%20from%20Terabox%20links.&font=Bitter&forks=1&issues=1&language=1&name=1&owner=1&pattern=Overlapping%20Hexagons&pulls=1&stargazers=1&theme=Dark" alt="TeraBox-Downloader-Bot" width="640" height="320" />
 
 
 <p id="description">A telegram bot for downloading terabox videos fastly</p>
