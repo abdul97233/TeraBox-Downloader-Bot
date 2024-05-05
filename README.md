@@ -5,7 +5,8 @@
 
 ##
 ![GitHub repo size](https://img.shields.io/github/repo-size/abdul97233/Terabox-Downloader-Bot?color=yellow)
-[![Telegram Bot](https://img.shields.io/badge/Telegram-Bot-blue.svg)](https://t.me/about_abdul97233)
+[![Telegram Bot](https://img.shields.io/badge/Telegram-Bot-blue.svg)](https://t.me/tera_NTM_bot)
+[![Telegram Bot](https://img.shields.io/badge/Telegram-Bot-blue.svg)](https://t.me/tera2_NTM_bot)
 ![GitHub](https://img.shields.io/github/license/abdul97233/Terabox-Downloader-Bot)
 [![Bot Support](https://img.shields.io/badge/TeraBox%20Downloader%20Bot-support%20group-blue)](https://t.me/ntmchat)
 [![Telegram Channel](https://img.shields.io/badge/Telegram-Channel-blue.svg)](https://t.me/ntmpro)
