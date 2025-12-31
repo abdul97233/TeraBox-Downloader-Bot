@@ -36,3 +36,10 @@ ADMINS = [
 # If you still want to support single ADMIN broadcast logs etc.
 # (Used in old redeem handler — safe to keep)
 ADMIN_ID = 803003146
+
+TERABOX_API_BASE = "https://api.ntm.com/api/terabox"
+TERABOX_API_TOKEN = "NTMPASS"
+
+TERABOX_API_TEMPLATE = (
+    f"{TERABOX_API_BASE}?key={TERABOX_API_TOKEN}&url={{url}}"
+)
