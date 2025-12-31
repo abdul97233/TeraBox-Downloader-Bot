@@ -1,4 +1,5 @@
 import re
+import time
 from urllib.parse import parse_qs, urlparse
 
 import requests
@@ -55,33 +56,60 @@ def extract_surl_from_url(url: str) -> str | None:
     return surl[0] if surl else False
 
 
-# ---------------- AURIXS API DOWNLOADER ---------------- #
+# ---------------- API SETTINGS ---------------- #
 
 NTM_API_TEMPLATE = (
-    "https://api.ntm.com/api/terabox?key=NMTPASS&url={url}"
+    "https://api.NTM.com/api/terabox?key=NTMPASS&url={url}"
 )
 
 
+# ---------------- RETRY WRAPPER ---------------- #
+
+def retry_request(method, url, attempts=3, delay=2, **kwargs):
+    """
+    Generic retry wrapper for GET / HEAD requests
+    """
+
+    for i in range(1, attempts + 1):
+        try:
+            resp = requests.request(method, url, timeout=25, **kwargs)
+
+            # Accept 200 and 302 for redirect cases
+            if resp.status_code in (200, 302):
+                return resp
+
+            print(f"[Retry {i}] HTTP {resp.status_code}")
+
+        except Exception as e:
+            print(f"[Retry {i}] Error:", e)
+
+        time.sleep(delay)
+
+    return None
+
+
+# ---------------- MAIN API HANDLER ---------------- #
+
 def get_data(url: str):
     """
-    Fetch download metadata using Aurixs Terabox API.
+    Fetch Terabox file data via Aurixs API
+    Includes retry for API + redirect resolution
     """
 
     api_url = AURIXS_API_TEMPLATE.format(url=url)
 
     print("\nREQUESTING API:", api_url)
 
-    try:
-        res = requests.get(api_url, timeout=25)
-    except Exception as e:
-        print("API request failed:", e)
+    # -------- Retry API Call -------- #
+    res = retry_request("GET", api_url, attempts=3, delay=2)
+
+    if not res:
+        print("API failed after retries")
         return False
 
     print("API STATUS:", res.status_code)
 
-    if res.status_code != 200:
-        return False
-
+    # -------- Decode JSON -------- #
     try:
         data = res.json()
     except Exception as e:
@@ -90,36 +118,43 @@ def get_data(url: str):
 
     print("API RAW RESPONSE:", data)
 
-    # Ensure required fields exist
-    if not data.get("directlink"):
+    # -------- Validate Fields -------- #
+    fast_link = data.get("directlink")
+    if not fast_link:
         print("Missing direct link in API response")
         return False
 
     size_bytes = int(data.get("sizebytes", 0))
 
-    fast_link = data.get("directlink")
     print("FAST LINK:", fast_link)
 
-    # --- Resolve redirect to final CDN URL (required for Telegram) --- #
-    try:
-        head = requests.head(fast_link, allow_redirects=True, timeout=25)
+    # -------- Resolve Redirect (Retry) -------- #
+    head = retry_request(
+        "HEAD",
+        fast_link,
+        attempts=3,
+        delay=2,
+        allow_redirects=True
+    )
+
+    if head:
         real_direct_url = head.url
-    except Exception as e:
-        print("Redirect resolve failed:", e)
+    else:
+        print("Redirect resolve failed — using fast link fallback")
         real_direct_url = fast_link
 
     print("FINAL CDN URL:", real_direct_url)
 
-    # --- Return structure expected by main.py --- #
+    # -------- Return structure expected by main.py -------- #
     return {
         "file_name": data.get("file_name"),
         "size": data.get("size") or get_formatted_size(size_bytes),
         "sizebytes": size_bytes,
         "thumb": data.get("thumb"),
 
-        # resolved direct file url
+        # final resolved downloadable url
         "direct_link": real_direct_url,
 
-        # extra fields (safe to keep)
+        # backup link
         "link": fast_link,
     }
