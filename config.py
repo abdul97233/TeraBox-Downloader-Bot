@@ -1,25 +1,38 @@
-# API credentials
-API_ID = 123456
-API_HASH = "DWSC65HGFswcf56g8ergjhgdw54586"
-BOT_TOKEN = "123456:abcdekgfiJLKMNOPqjngghdf"
+# ================== TELEGRAM API CONFIG ==================
 
-# Redis configuration
-REDIS_CONFIG = {
-    "HOST": "redis-12345.c16.us-east-1-2.ec2.cloud.redislabs.com",
-    "PORT": 17713,
-    "USERNAME": "default",
-    "PASSWORD": "password",
-    "DATABASE": "NTM"
-}
+# Get these from https://my.telegram.org/apps
+API_ID = 1234567
+API_HASH = "YOUR_API_HASH_HERE"
 
-# Chat ID where videos will be stored
-PRIVATE_CHAT_ID = -100123456789
+# Bot token from @BotFather
+BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
 
-# Authentication cookie
-COOKIE = {
-    "COOKIE": "Paste your cookie here"
-}
-# COOKIE FOR AUTHENTICATION (get from chrome dev tools) ex: "PANWEB=1; csrfToken=; lang=en; TSID=; __bid_n=; _ga=; __stripe_mid=; ndus=; browserid==; ndut_fmt=; _ga_06ZNKL8C2E=" (don't use this)
 
-# List of bot admins
-ADMINS = [803003146]
+# ================== REDIS DATABASE CONFIG ==================
+
+# Redis Host / Port / Password
+HOST = "127.0.0.1"
+PORT = 6379
+PASSWORD = None   # Set to None if Redis has no password
+
+
+# ================== BOT SETTINGS ==================
+
+# Private storage chat where files are uploaded
+# Use your private channel / chat ID (must be integer)
+PRIVATE_CHAT_ID = -1000000000000
+
+
+# Admin user IDs (MUST be integers)
+# Add multiple IDs inside list
+ADMINS = [
+    803003146,   # Example: Your Telegram ID
+    # 123456789,
+]
+
+
+# ================== OPTIONAL FLAGS ==================
+
+# If you still want to support single ADMIN broadcast logs etc.
+# (Used in old redeem handler — safe to keep)
+ADMIN_ID = 803003146
