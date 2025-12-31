@@ -10,16 +10,26 @@ from tools import get_formatted_size
 
 def check_url_patterns(url):
     patterns = [
-        r"mirrobox\.com",
-        r"nephobox\.com",
+        r"ww\.mirrobox\.com",
+        r"www\.nephobox\.com",
         r"freeterabox\.com",
+        r"www\.freeterabox\.com",
         r"1024tera\.com",
         r"4funbox\.co",
+        r"www\.4funbox\.com",
+        r"mirrobox\.com",
+        r"nephobox\.com",
         r"terabox\.app",
         r"terabox\.com",
+        r"www\.terabox\.ap",
+        r"www\.terabox\.com",
+        r"www\.1024tera\.co",
+        r"www\.momerybox\.com",
         r"teraboxapp\.com",
         r"momerybox\.com",
         r"tibibox\.com",
+        r"www\.tibibox\.com",
+        r"www\.teraboxapp\.com",
     ]
 
     for pattern in patterns:
