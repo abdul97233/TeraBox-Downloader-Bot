@@ -58,7 +58,7 @@ def extract_surl_from_url(url: str) -> str | None:
 # ---------------- AURIXS API DOWNLOADER ---------------- #
 
 AURIXS_API_TEMPLATE = (
-    "https://api.aurixs.info/api/terabox?key=axcne&url={url}"
+    "https://api.ntm.com/api/terabox?key=NMTPASS&url={url}"
 )
 
 
