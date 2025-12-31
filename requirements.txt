@@ -8,3 +8,6 @@ pillow
 hachoir
 requests
 redis
+FastTelethonhelper
+humanreadable
+pillow
