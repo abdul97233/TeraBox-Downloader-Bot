@@ -1,9 +1,10 @@
+import asyncio
 import re
-import time
 from urllib.parse import parse_qs, urlparse
 
-import requests
+import aiohttp
 
+from config import TERABOX_API_TEMPLATE
 from tools import get_formatted_size
 
 
@@ -11,26 +12,44 @@ from tools import get_formatted_size
 
 def check_url_patterns(url):
     patterns = [
-        r"ww\.mirrobox\.com",
-        r"www\.nephobox\.com",
-        r"freeterabox\.com",
-        r"www\.freeterabox\.com",
+        r"terabox\.com",
+        r"terabox\.app",
+        r"terabox\.fun",
+        r"terabox\.best",
+        r"terabox\.ap",
+        r"terabox\.club",
+        r"terabox\.click",
+        r"teraboxapp\.com",
+        r"teraboxlink\.com",
+        r"teraboxlinke\.com",
+        r"teraboxshare\.com",
+        r"teraboxsharefile\.com",
+        r"teraboxurl\.com",
+        r"teraboxfree\.com",
+        r"terasharelink\.com",
+        r"terasharefile\.com",
+        r"terashareus\.com",
+        r"terafileshare\.com",
+        r"tera1024box\.com",
         r"1024tera\.com",
+        r"1024tera\.co",
+        r"1024terabox\.com",
+        r"1024-terabox\.com",
+        r"4funbox\.com",
         r"4funbox\.co",
-        r"www\.4funbox\.com",
+        r"4funbox\.in",
         r"mirrobox\.com",
         r"nephobox\.com",
-        r"terabox\.app",
-        r"terabox\.com",
-        r"www\.terabox\.ap",
-        r"www\.terabox\.com",
-        r"www\.1024tera\.co",
-        r"www\.momerybox\.com",
-        r"teraboxapp\.com",
+        r"freeterabox\.com",
         r"momerybox\.com",
         r"tibibox\.com",
-        r"www\.tibibox\.com",
-        r"www\.teraboxapp\.com",
+        r"gibibox\.com",
+        r"pebibox\.com",
+        r"fancybox\.in",
+        r"bestclouddrive\.com",
+        r"dubox\.com",
+        r"playduo\.link",
+        r"theteraboxmod\.app",
     ]
 
     for pattern in patterns:
@@ -58,103 +77,85 @@ def extract_surl_from_url(url: str) -> str | None:
 
 # ---------------- API SETTINGS ---------------- #
 
-NTM_API_TEMPLATE = (
-    "https://api.NTM.com/api/terabox?key=NTMPASS&url={url}"
-)
+# API endpoint template is imported from config (TERABOX_API_TEMPLATE)
 
 
 # ---------------- RETRY WRAPPER ---------------- #
 
-def retry_request(method, url, attempts=3, delay=2, **kwargs):
-    """
-    Generic retry wrapper for GET / HEAD requests
-    """
-
+async def retry_request(method, url, attempts=3, delay=2, **kwargs):
+    """Async retry wrapper for GET requests."""
+    timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=15)
     for i in range(1, attempts + 1):
         try:
-            resp = requests.request(method, url, timeout=25, **kwargs)
-
-            # Accept 200 and 302 for redirect cases
-            if resp.status_code in (200, 302):
-                return resp
-
-            print(f"[Retry {i}] HTTP {resp.status_code}")
-
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.request(method, url, **kwargs) as resp:
+                    if resp.status in (200, 302):
+                        resp._text = await resp.text()
+                        resp._json = None
+                        return resp
+                    print(f"[Retry {i}] HTTP {resp.status}")
         except Exception as e:
             print(f"[Retry {i}] Error:", e)
-
-        time.sleep(delay)
-
+        await asyncio.sleep(delay)
     return None
 
 
 # ---------------- MAIN API HANDLER ---------------- #
 
-def get_data(url: str):
-    """
-    Fetch Terabox file data via Aurixs API
-    Includes retry for API + redirect resolution
-    """
-
-    api_url = AURIXS_API_TEMPLATE.format(url=url)
-
+async def get_files(url: str):
+    """Async: Fetch ALL Terabox file data via Saiyan API."""
+    api_url = TERABOX_API_TEMPLATE.format(url=url)
     print("\nREQUESTING API:", api_url)
 
-    # -------- Retry API Call -------- #
-    res = retry_request("GET", api_url, attempts=3, delay=2)
-
+    res = await retry_request("GET", api_url, attempts=3, delay=2)
     if not res:
         print("API failed after retries")
         return False
 
-    print("API STATUS:", res.status_code)
+    print("API STATUS:", res.status)
 
-    # -------- Decode JSON -------- #
     try:
-        data = res.json()
+        data = await res.json()
     except Exception as e:
         print("JSON parse error:", e)
         return False
 
     print("API RAW RESPONSE:", data)
 
-    # -------- Validate Fields -------- #
-    fast_link = data.get("directlink")
-    if not fast_link:
-        print("Missing direct link in API response")
+    if not data.get("ok"):
+        print("API returned ok=false")
         return False
 
-    size_bytes = int(data.get("sizebytes", 0))
+    files = data.get("files")
+    if not files:
+        print("No files in API response")
+        return False
 
-    print("FAST LINK:", fast_link)
+    result = []
+    for f in files:
+        fast_link = f.get("download_url")
+        if not fast_link:
+            continue
+        size_bytes = int(f.get("size", 0))
+        result.append({
+            "file_name": f.get("filename"),
+            "size": f.get("size_readable") or get_formatted_size(size_bytes),
+            "sizebytes": size_bytes,
+            "thumb": None,
+            "direct_link": fast_link,
+            "link": fast_link,
+        })
 
-    # -------- Resolve Redirect (Retry) -------- #
-    head = retry_request(
-        "HEAD",
-        fast_link,
-        attempts=3,
-        delay=2,
-        allow_redirects=True
-    )
+    if not result:
+        print("No valid download urls in API response")
+        return False
 
-    if head:
-        real_direct_url = head.url
-    else:
-        print("Redirect resolve failed — using fast link fallback")
-        real_direct_url = fast_link
+    return result
 
-    print("FINAL CDN URL:", real_direct_url)
 
-    # -------- Return structure expected by main.py -------- #
-    return {
-        "file_name": data.get("file_name"),
-        "size": data.get("size") or get_formatted_size(size_bytes),
-        "sizebytes": size_bytes,
-        "thumb": data.get("thumb"),
-
-        # final resolved downloadable url
-        "direct_link": real_direct_url,
-
-        # backup link
-        "link": fast_link,
-    }
+async def get_data(url: str):
+    """Async: Fetch the FIRST Terabox file only."""
+    files = await get_files(url)
+    if not files:
+        return False
+    return files[0]

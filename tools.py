@@ -1,9 +1,145 @@
+import asyncio
+import os
 import re
 from io import BytesIO
 from urllib.parse import parse_qs, urlparse
 
+import aiohttp
+import cv2
 import requests
 from telethon import TelegramClient
+
+
+VIDEO_EXTENSIONS = (".mp4", ".mkv", ".webm", ".mov", ".avi", ".flv", ".wmv", ".m4v", ".mpg", ".mpeg", ".3gp", ".ts", ".vob", ".ogv", ".mts", ".m2ts", ".divx", ".asf", ".rm", ".rmvb")
+
+
+def get_video_info(file_path: str) -> dict:
+    """Extract duration, width, height and thumbnail from a video file using OpenCV."""
+    info = {"duration": 0, "width": 0, "height": 0, "thumbnail": None}
+    try:
+        cap = cv2.VideoCapture(file_path)
+        if not cap.isOpened():
+            return info
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        duration = int(frames / fps) if fps > 0 else 0
+        # Generate thumbnail at 10% of video
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(frames * 0.1))
+        ret, frame = cap.read()
+        thumb_path = None
+        if ret:
+            thumb_path = os.path.join(os.path.dirname(file_path), "thumb.jpg")
+            cv2.imwrite(thumb_path, frame)
+        cap.release()
+        info = {"duration": duration, "width": w, "height": h, "thumbnail": thumb_path}
+    except Exception as e:
+        print(f"get_video_info error: {e}")
+    return info
+
+
+def escape_markdown(text: str) -> str:
+    """Escape Telegram legacy Markdown special characters (V1)."""
+    if text is None:
+        return ""
+    return re.sub(r"([_*\[\]()~`>#+\-=|{}\\])", r"\\\1", str(text))
+
+
+class _ProgressFileWrapper:
+    """Wraps a file object so requests calls `callback(read_bytes, total)`
+    as data is read during an upload."""
+
+    def __init__(self, fileobj, callback, total, loop):
+        self._f = fileobj
+        self._cb = callback
+        self._total = total
+        self._loop = loop
+        self._read = 0
+
+    def __len__(self):
+        return self._total
+
+    def read(self, size=-1):
+        data = self._f.read(size)
+        if data:
+            self._read += len(data)
+            if self._cb:
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        self._cb(self._read, self._total), self._loop
+                    )
+                except Exception:
+                    pass
+        return data
+
+
+def _bot_api_send(base_url, token, chat_id, file_path, caption, filename, progress_callback=None, loop=None,
+                   duration=0, width=0, height=0, thumb=None):
+    """Upload a local file to a chat via the Telegram Bot HTTP API.
+
+    Video files are sent with sendVideo so Telegram renders them as
+    playable media (with streaming) instead of a generic document/file.
+    """
+    ext = os.path.splitext(filename)[1].lower()
+    is_video = ext in VIDEO_EXTENSIONS
+
+    if is_video:
+        endpoint = "sendVideo"
+        file_field = "video"
+        data = {
+            "chat_id": chat_id,
+            "caption": caption,
+            "parse_mode": "Markdown",
+            "supports_streaming": "true",
+            "spoiler": "true",
+        }
+        if duration:
+            data["duration"] = str(duration)
+        if width:
+            data["width"] = str(width)
+        if height:
+            data["height"] = str(height)
+    else:
+        endpoint = "sendDocument"
+        file_field = "document"
+        data = {
+            "chat_id": chat_id,
+            "caption": caption,
+            "parse_mode": "Markdown",
+        }
+
+    url = f"{base_url.rstrip('/')}/bot{token}/{endpoint}"
+    total = os.path.getsize(file_path)
+
+    files_dict = {}
+    with open(file_path, "rb") as raw:
+        wrapped = _ProgressFileWrapper(raw, progress_callback, total, loop)
+        files_dict[file_field] = (filename, wrapped)
+        if thumb and is_video and os.path.isfile(thumb):
+            files_dict["thumb"] = ("thumb.jpg", open(thumb, "rb"), "image/jpeg")
+        try:
+            resp = requests.post(url, files=files_dict, data=data, timeout=1800)
+        except Exception as e:
+            return {"ok": False, "description": str(e)}
+        finally:
+            if "thumb" in files_dict:
+                files_dict["thumb"][1].close()
+
+    try:
+        return resp.json()
+    except Exception:
+        return {"ok": False, "description": resp.text[:500]}
+
+
+async def send_document_via_api(base_url, token, chat_id, file_path, caption, filename, progress_callback=None,
+                                 duration=0, width=0, height=0, thumb=None):
+    """Async wrapper around the Bot API upload (runs in a thread)."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None, _bot_api_send, base_url, token, chat_id, file_path, caption, filename, progress_callback, loop,
+        duration, width, height, thumb
+    )
 
 
 def check_url_patterns(url: str) -> bool:
@@ -17,26 +153,44 @@ def check_url_patterns(url: str) -> bool:
     bool: True if the URL matches a known pattern, False otherwise.
     """
     patterns = [
-        r"ww\.mirrobox\.com",
-        r"www\.nephobox\.com",
-        r"freeterabox\.com",
-        r"www\.freeterabox\.com",
+        r"terabox\.com",
+        r"terabox\.app",
+        r"terabox\.fun",
+        r"terabox\.best",
+        r"terabox\.ap",
+        r"terabox\.club",
+        r"terabox\.click",
+        r"teraboxapp\.com",
+        r"teraboxlink\.com",
+        r"teraboxlinke\.com",
+        r"teraboxshare\.com",
+        r"teraboxsharefile\.com",
+        r"teraboxurl\.com",
+        r"teraboxfree\.com",
+        r"terasharelink\.com",
+        r"terasharefile\.com",
+        r"terashareus\.com",
+        r"terafileshare\.com",
+        r"tera1024box\.com",
         r"1024tera\.com",
+        r"1024tera\.co",
+        r"1024terabox\.com",
+        r"1024-terabox\.com",
+        r"4funbox\.com",
         r"4funbox\.co",
-        r"www\.4funbox\.com",
+        r"4funbox\.in",
         r"mirrobox\.com",
         r"nephobox\.com",
-        r"terabox\.app",
-        r"terabox\.com",
-        r"www\.terabox\.ap",
-        r"www\.terabox\.com",
-        r"www\.1024tera\.co",
-        r"www\.momerybox\.com",
-        r"teraboxapp\.com",
+        r"freeterabox\.com",
         r"momerybox\.com",
         r"tibibox\.com",
-        r"www\.tibibox\.com",
-        r"www\.teraboxapp\.com",
+        r"gibibox\.com",
+        r"pebibox\.com",
+        r"fancybox\.in",
+        r"bestclouddrive\.com",
+        r"dubox\.com",
+        r"playduo\.link",
+        r"theteraboxmod\.app",
     ]
 
     for pattern in patterns:
@@ -109,16 +263,10 @@ def extract_surl_from_url(url: str) -> str:
 
 
 def get_formatted_size(size_bytes: int) -> str:
-    """
-    Returns a human-readable file size from the given number of bytes.
-
-    Parameters:
-        size_bytes (int): The number of bytes to be converted to a file size.
-
-    Returns:
-        str: The file size in a human-readable format.
-    """
-    if size_bytes >= 1024 * 1024:
+    if size_bytes >= 1024 * 1024 * 1024:
+        size = size_bytes / (1024 * 1024 * 1024)
+        unit = "GB"
+    elif size_bytes >= 1024 * 1024:
         size = size_bytes / (1024 * 1024)
         unit = "MB"
     elif size_bytes >= 1024:
@@ -127,7 +275,6 @@ def get_formatted_size(size_bytes: int) -> str:
     else:
         size = size_bytes
         unit = "b"
-
     return f"{size:.2f} {unit}"
 
 
@@ -179,37 +326,47 @@ async def download_file(
     filename: str,
     callback=None,
 ) -> str | bool:
-    """
-    Download a file from a URL to a specified location.
-
-    Args:
-        url (str): The URL of the file to download.
-        filename (str): The location to save the file to.
-        callback (function, optional): A function that will be called
-            with progress updates during the download. The function should
-            accept three arguments: the number of bytes downloaded so far,
-            the total size of the file, and a status message.
-
-    Returns:
-        str: The filename of the downloaded file, or False if the download
-            failed.
-
-    Raises:
-        requests.exceptions.HTTPError: If the server returns an error.
-        OSError: If there is an error opening or writing to the file.
-    """
     try:
-        response = requests.get(url, stream=True)
-        response.raise_for_status()
-        with open(filename, "wb") as file:
-            for chunk in response.iter_content(chunk_size=1024):
-                file.write(chunk)
-                if callback:
-                    downloaded_size = file.tell()
-                    total_size = int(response.headers.get("content-length", 0))
-                    await callback(downloaded_size, total_size, "Downloading")
+        timeout = aiohttp.ClientTimeout(total=600, connect=15, sock_read=60)
+        connector = aiohttp.TCPConnector(
+            limit=10, force_close=False,
+            ttl_dns_cache=300, keepalive_timeout=60,
+            enable_cleanup_closed=True,
+        )
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            "Accept": "*/*",
+            "Accept-Encoding": "identity",
+            "Connection": "keep-alive",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://terabox.com/",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "cross-site",
+            "Upgrade-Insecure-Requests": "1",
+            "sec-ch-ua": '"Chromium";v="125", "Google Chrome";v="125"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+        }
+        async with aiohttp.ClientSession(connector=connector, headers=headers) as session:
+            async with session.get(url, timeout=timeout) as response:
+                response.raise_for_status()
+                total = int(response.headers.get("Content-Length", 0))
+                downloaded = 0
+                if total > 0:
+                    with open(filename, "wb") as f:
+                        f.truncate(total)
+                with open(filename, "r+b" if total > 0 else "wb") as file:
+                    async for chunk in response.content.iter_chunked(2097152):
+                        file.write(chunk)
+                        downloaded += len(chunk)
+                        if callback:
+                            await callback(downloaded, total, "Downloading")
         return filename
 
+    except asyncio.TimeoutError:
+        print(f"Download timeout for {url}")
+        return False
     except Exception as e:
         print(f"Error downloading file: {e}")
         return False

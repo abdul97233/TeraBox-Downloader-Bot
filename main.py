@@ -13,15 +13,19 @@ from telethon.types import Message, UpdateNewMessage
 
 from cansend import CanSend
 from config import *
-from terabox import get_data
+from terabox import get_files
 from tools import (
     convert_seconds,
     download_file,
     download_image_to_bytesio,
+    escape_markdown,
     extract_code_from_url,
     get_formatted_size,
+    get_video_info,
     get_urls_from_string,
     is_user_on_chat,
+    send_document_via_api,
+    VIDEO_EXTENSIONS,
 )
 
 bot = TelegramClient("tele", API_ID, API_HASH)
@@ -157,7 +161,7 @@ async def ping_pong(m: UpdateNewMessage):
 # Generate gift codes
 @bot.on(
     events.NewMessage(
-        pattern="/gc (\d+)",
+        pattern=r"/gc (\d+)",
         incoming=True,
         outgoing=False,
         from_users=ADMINS,
@@ -254,30 +258,43 @@ async def redeem_gift_code(m: UpdateNewMessage):
     else:
         await m.reply("Invalid or expired gift code.")
 
-# Define /broadcast command to allow admins to send broadcast messages
 @bot.on(
     events.NewMessage(
         pattern="/broadcast",
         incoming=True,
         outgoing=False,
-        from_users=ADMINS,  # Only allow admins to use this command
+        from_users=ADMINS,
     )
 )
 async def broadcast_message(m: UpdateNewMessage):
-    # Extract the broadcast message from the command
     broadcast_text = m.text.split("/broadcast", 1)[1].strip()
-    
-    # Fetch all users who have interacted with the bot
-    all_users = await bot.get_participants(-1001336746488)  # Replace with your group ID
-    
-    # Iterate through all users and send the broadcast message
+    if not broadcast_text:
+        return await m.reply(
+            "**Usage:** `/broadcast <message>`\n"
+            "Send a message to all bot users."
+        )
+
+    status = await m.reply("Broadcasting...")
+
+    all_users = await bot.get_participants(-1001336746488)
+    total = len(all_users)
+    sent = 0
+    failed = 0
+
     for user in all_users:
         try:
             await bot.send_message(user.id, broadcast_text)
-        except Exception as e:
-            print(f"Failed to send broadcast to user {user.id}: {e}")
+            sent += 1
+        except Exception:
+            failed += 1
 
-    await m.reply("Broadcast sent successfully!")
+    await status.edit(
+        f"**Broadcast Complete**\n\n"
+        f"Total users: **{total}**\n"
+        f"Sent: **{sent}**\n"
+        f"Failed: **{failed}**",
+        parse_mode="markdown",
+    )
 
 
 # Define start command to check user's plan and send welcome message accordingly
@@ -349,9 +366,7 @@ async def start(m: UpdateNewMessage):
     for admin_id in ADMINS:
         await bot.send_message(admin_id, admin_message)
     
-    if db.sismember(PREMIUM_USERS_KEY, user_id):
-        # Premium user
-        reply_text = """
+    reply_text = """
 ┏━━━━━━━━━━⍟
 ┃ 𝐍𝐓𝐌 𝐓𝐞𝐫𝐚 𝐁𝐨𝐱 𝐃𝐨𝐰𝐧𝐥𝐨𝐚𝐝𝐞𝐫 𝐁𝐨𝐭
 ┗━━━━━━━━━━━━━━━━━⍟
@@ -366,24 +381,6 @@ async def start(m: UpdateNewMessage):
 Do /help or /cmds - Display available commands.
 
 [『 𝗡⋆𝗧⋆𝗠 』](https://t.me/NTMpro) 
-"""
-    else:
-        # Free user
-        reply_text = """
-┏━━━━━━━━━━⍟
-┃ 𝐅𝐑𝐄𝐄 𝐔𝐒𝐄𝐑 
-┗━━━━━━━━━━━━━━━━━⍟
-╔══════════⍟ 
-┃ As a free user, 
-┃ you're not approved to access the full capabilities of this bot.
-┃
-┃ Upgrade to premium or utilize.
-┃
-┃ /cmds, or /help to view available cmds 
-┃ /id or /info - To check your details
-┃ /plan - To check availabe plan 
-╚═════════════════⍟
-For subscription inquiries, contact @abdul97233.
 """
     await m.reply(
         reply_text,
@@ -544,7 +541,6 @@ async def de(m: UpdateNewMessage):
         await m.reply(f"{user_id} is not a premium user.")
 
 
-# Add premium user check for handling message
 @bot.on(
     events.NewMessage(
         incoming=True,
@@ -555,9 +551,7 @@ async def de(m: UpdateNewMessage):
     )
 )
 async def get_message(m: Message):
-    user_id = m.sender_id
-    if db.sismember(PREMIUM_USERS_KEY, user_id):
-        asyncio.create_task(handle_message(m))
+    asyncio.create_task(handle_message(m))
 
 
 async def handle_message(m: Message):
@@ -565,216 +559,337 @@ async def handle_message(m: Message):
     url = get_urls_from_string(m.text)
     if not url:
         return await m.reply("Please enter a valid url.")
-    check_if = await is_user_on_chat(bot, "@NTMpro", m.peer_id)
+    check_if = await is_user_on_chat(bot, "@NTMpro", m.sender_id)
     if not check_if:
         return await m.reply("Please join @NTMpro then send me the link again.")
-    check_if = await is_user_on_chat(bot, "@NTMchat", m.peer_id)
+    check_if = await is_user_on_chat(bot, "@NTMchat", m.sender_id)
     if not check_if:
         return await m.reply(
             "Please join @NTMchat then send me the link again."
         )
     
-    is_spam = db.get(m.sender_id)
-    if is_spam and m.sender_id not in [803003146]:
-        if db.sismember(PREMIUM_USERS_KEY, m.sender_id):
-            return await m.reply("You are spamming. Please wait 30 seconds and try again.")
-        else:
-            return await m.reply("You are spamming. Please wait 1 minute and try again.")
-    else:
-        hm = await m.reply("Sending you the media wait...")
-        count = db.get(f"check_{m.sender_id}")
-        if count and int(count) > 5:
-            return await hm.edit("You are limited now. Please come back after 2 hours or use another account.")
+    hm = await m.reply("Sending you the media wait...")
+
+    is_premium = bool(db.sismember(PREMIUM_USERS_KEY, m.sender_id))
+    count = db.get(f"check_{m.sender_id}")
+
+    # Free user rate limit: 10 downloads per hour
+    if not is_premium and m.sender_id not in ADMINS:
+        if count and int(count) >= 10:
+            ttl = db.ttl(f"check_{m.sender_id}")
+            ttl_text = convert_seconds(ttl) if ttl and ttl > 0 else "1 hour"
+            return await hm.edit(
+                f"You've reached your limit (10 videos/hour).\n"
+                f"Try again in **{ttl_text}**.\n"
+                f"Upgrade to **Premium** for unlimited downloads."
+            )
 
     shorturl = extract_code_from_url(url)
     if not shorturl:
         return await hm.edit("Seems like your link is invalid.")
-    fileid = db.get(shorturl)
-    if fileid:
-        try:
-            await hm.delete()
-        except:
-            pass
 
-        await bot(
-            ForwardMessagesRequest(
-                from_peer=PRIVATE_CHAT_ID,
-                id=[int(fileid)],
-                to_peer=m.chat.id,
-                drop_author=True,
-                # noforwards=True, #Uncomment it if you dont want to forward the media.
-                background=True,
-                drop_media_captions=False,
-                with_my_score=True,
-            )
-        )
-        db.set(m.sender_id, time.monotonic(), ex=60)
-        db.set(
-            f"check_{m.sender_id}",
-            int(count) + 1 if count else 1,
-            ex=7200,
-        )
-
-        return
-
-    data = get_data(url)
-    if not data:
+    files = await get_files(url)
+    if not files:
         return await hm.edit("Sorry! API is dead or maybe your link is broken.")
-    db.set(m.sender_id, time.monotonic(), ex=60)
-    if (
-        not data["file_name"].endswith(".mp4")
-        and not data["file_name"].endswith(".mkv")
-        and not data["file_name"].endswith(".Mkv")
-        and not data["file_name"].endswith(".webm")
-    ):
-        return await hm.edit(
-            f"Sorry! File is not supported for now. I can download only .mp4, .mkv and .webm files."
-        )
-    if int(data["sizebytes"]) > 524288000 and m.sender_id not in [803003146]:
-        return await hm.edit(
-            f"Sorry! File is too big. I can download only 500MB and this file is of {data['size']} ."
-        )
 
-    start_time = time.time()
-    end_time = time.time()  # Record the end time
-    total_time = end_time - start_time  # Calculate the total time taken
+    # Premium users get all files, free users get only the first one
+    files_to_process = files if is_premium else files[:1]
+    total = len(files_to_process)
+
+    # Cached forwarding only works for the single-file (free) flow
+    if not is_premium:
+        fileid = db.get(shorturl)
+        if fileid:
+            try:
+                cached_msg = await bot.get_messages(PRIVATE_CHAT_ID, ids=int(fileid))
+                if cached_msg and cached_msg.media:
+                    data = files_to_process[0]
+                    cached_caption = f"""
+┏━━━━━━━━━━⍟
+┃ 𝐍𝐓𝐌 𝐓𝐞𝐫𝐚 𝐁𝐨𝐱 𝐃𝐨𝐰𝐧𝐥𝐨𝐚𝐝𝐞𝐫 𝐁𝐨𝐭
+┗━━━━━━━━━━━━━━━━━⍟
+╔══════════⍟
+╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{data['file_name']}`
+╟➣𝙎𝙞𝙯𝙚: **{data['size']}**
+╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(m.sender.first_name)}
+╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(m.sender.username or '-')}
+╚═════════════════⍟
+         @NTMpro
+"""
+                    await bot.send_file(
+                        m.chat.id,
+                        file=cached_msg.media,
+                        caption=cached_caption,
+                        supports_streaming=True,
+                    )
+                    await hm.delete()
+                    db.set(
+                        f"check_{m.sender_id}",
+                        int(count) + 1 if count else 1,
+                        ex=3600,
+                    )
+                    return
+            except Exception as e:
+                print(f"Cache forward failed: {e}")
+
     user_first_name = m.sender.first_name
     user_username = m.sender.username
     cansend = CanSend()
 
-    async def progress_bar(current_downloaded, total_downloaded, state="Sending"):
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-        if not cansend.can_send():
-            return
-        bar_length = 20
-        percent = current_downloaded / total_downloaded
-        arrow = "█" * int(percent * bar_length)
-        spaces = "░" * (bar_length - len(arrow))
+    for idx, data in enumerate(files_to_process, start=1):
 
-        elapsed_time = time.time() - start_time
+        # -------- Per-file supported type check --------
+        fname_lower = data["file_name"].lower()
+        file_ext = "." + fname_lower.rsplit(".", 1)[-1] if "." in fname_lower else ""
+        if file_ext not in VIDEO_EXTENSIONS:
+            if total == 1:
+                supported = ", ".join(VIDEO_EXTENSIONS)
+                return await hm.edit(
+                    f"Sorry! File type `{file_ext}` is not supported.\nSupported: {supported}"
+                )
+            await hm.edit(f"Skipping unsupported file: `{data['file_name']}`")
+            continue
 
-        head_text = f"{state} `{data['file_name']}`"
-        progress_bar = f"[{arrow + spaces}] {percent:.2%}"
-        upload_speed = current_downloaded / elapsed_time if elapsed_time > 0 else 0
-        speed_line = f"Speed: **{get_formatted_size(upload_speed)}/s**"
+        # -------- Per-file size check (admins and premium bypass) --------
+        if int(data["sizebytes"]) > 524288000 and m.sender_id not in ADMINS and not is_premium:
+            if total == 1:
+                return await hm.edit(
+                    f"Sorry! File is too big. I can download only 500MB and this file is of {data['size']} ."
+                )
+            await hm.edit(f"Skipping too big file: `{data['file_name']}` ({data['size']})")
+            continue
 
-        time_remaining = (
-            (total_downloaded - current_downloaded) / upload_speed
-            if upload_speed > 0
-            else 0
-        )
-        time_line = f"Time Remaining: `{convert_seconds(time_remaining)}`"
+        start_time = time.time()
+        label = f"({idx}/{total}) " if total > 1 else ""
 
-        size_line = f"Size: **{get_formatted_size(current_downloaded)}** / **{get_formatted_size(total_downloaded)}**"
+        async def progress_bar(current_downloaded, total_downloaded, state="Sending"):
 
-        await hm.edit(
-            f"{head_text}\n{progress_bar}\n{speed_line}\n{time_line}\n{size_line}",
-            parse_mode="markdown",
-        )
+            if not cansend.can_send():
+                return
+            bar_length = 20
+            percent = current_downloaded / total_downloaded
+            arrow = "█" * int(percent * bar_length)
+            spaces = "░" * (bar_length - len(arrow))
 
-    uuid = str(uuid4())
-    thumbnail = download_image_to_bytesio(data["thumb"], "thumbnail.png")
+            elapsed_time = time.time() - start_time
 
-    try:
-        file = await bot.send_file(
-            PRIVATE_CHAT_ID,
-            file=data["direct_link"],
-            thumb=thumbnail if thumbnail else None,
-            progress_callback=progress_bar,
-            caption=f"""
-┏━━━━━━━━━━⍟
-┃ 𝐍𝐓𝐌 𝐓𝐞𝐫𝐚 𝐁𝐨𝐱 𝐃𝐨𝐰𝐧𝐥𝐨𝐚𝐝𝐞𝐫 𝐁𝐨𝐭
-┗━━━━━━━━━━━━━━━━━⍟
-╔══════════⍟
-╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{data['file_name']}`
-╟➣𝙎𝙞𝙯𝙚: **{data["size"]}** 
-╟➣𝗗𝗶𝗿𝗲𝗰𝘁 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱 𝗟𝗶𝗻𝗸 : [Click here]({data['direct_link']})
-╟➣𝗙𝗶𝗿𝘀𝘁 𝗡𝗮𝗺𝗲: {user_first_name}
-╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: {user_username}
-╟➣𝐓𝐨𝐭𝐚𝐥 𝐓𝐢𝐦𝐞 𝐓𝐚𝐤𝐞𝐧: {total_time} sec
-╚═════════════════⍟
-         @NTMpro
-""",
-            supports_streaming=True,
-            spoiler=True,
-        )
+            head_text = f"{state} {label}`{data['file_name']}`"
+            bar_text = f"[{arrow + spaces}] {percent:.2%}"
+            upload_speed = current_downloaded / elapsed_time if elapsed_time > 0 else 0
+            speed_mbps = upload_speed / (1024 * 1024)
+            speed_line = f"Speed: **{speed_mbps:.2f} MB/s**"
 
-        # pm2 start python3 --name "terabox" -- main.py
-    except telethon.errors.rpcerrorlist.WebpageCurlFailedError:
-        download = await download_file(
-            data["direct_link"], data["file_name"], progress_bar
-        )
-        if not download:
-            return await hm.edit(
-                f"Sorry! Download Failed but you can download it from [here]({data['direct_link']}).",
+            time_remaining = (
+                (total_downloaded - current_downloaded) / upload_speed
+                if upload_speed > 0
+                else 0
+            )
+            time_line = f"Time Remaining: `{convert_seconds(time_remaining)}`"
+
+            size_line = f"Size: **{get_formatted_size(current_downloaded)}** / **{get_formatted_size(total_downloaded)}**"
+
+            await hm.edit(
+                f"{head_text}\n{bar_text}\n{speed_line}\n{time_line}\n{size_line}",
                 parse_mode="markdown",
             )
-        file = await bot.send_file(
-            PRIVATE_CHAT_ID,
-            download,
-            caption=f"""
+
+        uuid = str(uuid4())
+        thumbnail = download_image_to_bytesio(data["thumb"], "thumbnail.png")
+
+        download = await download_file(
+            data["direct_link"], os.path.join(DOWNLOAD_DIR, data["file_name"]), progress_bar
+        )
+        total_time = time.time() - start_time
+        if not download:
+            if total == 1:
+                return await hm.edit(
+                    f"Sorry! Download Failed but you can download it from [here]({url}).",
+                    parse_mode="markdown",
+                )
+            await hm.edit(f"Download failed for `{data['file_name']}`")
+            continue
+
+        caption = f"""
 ┏━━━━━━━━━━⍟
 ┃ 𝐍𝐓𝐌 𝐓𝐞𝐫𝐚 𝐁𝐨𝐱 𝐃𝐨𝐰𝐧𝐥𝐨𝐚𝐝𝐞𝐫 𝐁𝐨𝐭
 ┗━━━━━━━━━━━━━━━━━⍟
 ╔══════════⍟
 ╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{data['file_name']}`
-╟➣𝙎𝙞𝙯𝙚: **{data["size"]}** 
+╟➣𝙎𝙞𝙯𝙚: **{escape_markdown(data['size'])}** 
 ╟➣𝗗𝗶𝗿𝗲𝗰𝘁 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱 𝗟𝗶𝗻𝗸 : [Click here]({data['direct_link']})
-╟➣𝗙𝗶𝗿𝘀𝘁 𝗡𝗮𝗺𝗲: {user_first_name}
-╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: {user_username}
+╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}
+╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(user_username or '-')}
 ╟➣𝐓𝐨𝐭𝐚𝐥 𝐓𝐢𝐦𝐞 𝐓𝐚𝐤𝐞𝐧: {total_time} sec
 ╚═════════════════⍟
          @NTMpro
+"""
 
-""",
-            progress_callback=progress_bar,
-            thumb=thumbnail if thumbnail else None,
-            supports_streaming=True,
-            spoiler=True,
-        )
+        # ---- Extract video metadata (duration, width, height, thumbnail) ----
+        vinfo = get_video_info(download)
+        vduration = vinfo.get("duration", 0)
+        vwidth = vinfo.get("width", 0)
+        vheight = vinfo.get("height", 0)
+        vthumb = vinfo.get("thumbnail")
+        if vthumb and not thumbnail:
+            thumbnail = download_image_to_bytesio(vthumb, "thumb.jpg")
+
+        # ---- Upload via self-hosted Telegram Bot API (2GB / high speed) ----
+        sent_id = None
         try:
-            os.unlink(download)
+            api_res = await send_document_via_api(
+                TG_API_BASE, BOT_TOKEN, PRIVATE_CHAT_ID, download, caption, data["file_name"], progress_bar,
+                duration=vduration, width=vwidth, height=vheight, thumb=vthumb,
+            )
+            if api_res.get("ok"):
+                sent_id = api_res["result"]["message_id"]
+                print("Uploaded via custom Bot API, message_id:", sent_id)
+            else:
+                print("Custom Bot API error:", api_res)
         except Exception as e:
-            print(e)
-    except Exception:
-        return await hm.edit(
-            f"Sorry! Download Failed but you can download it from [here]({data['direct_link']}).",
-            
-        )
-    try:
-        os.unlink(download)
-    except Exception as e:
-        pass
-    try:
-        await hm.delete()
-    except Exception as e:
-        print(e)
+            print("Custom Bot API upload failed:", e)
 
-    if shorturl:
-        db.set(shorturl, file.id)
-    if file:
-        db.set(uuid, file.id)
+        # ---- Fallback to Telethon MTProto upload if Bot API path failed ----
+        if sent_id is None:
+            try:
+                file = await bot.send_file(
+                    PRIVATE_CHAT_ID,
+                    file=download,
+                    thumb=thumbnail if thumbnail else None,
+                    progress_callback=progress_bar,
+                    caption=caption,
+                    video=True,
+                    supports_streaming=True,
+                    duration=vduration,
+                    attributes=[],
+                    spoiler=True,
+                )
+                sent_id = file.id
+            except Exception as e:
+                print("Telethon upload failed:", e)
+                try:
+                    os.unlink(download)
+                except Exception:
+                    pass
+                if total == 1:
+                    return await hm.edit(
+                        f"Sorry! Upload Failed but you can download it from [here]({url}).",
+                        parse_mode="markdown",
+                    )
+                await hm.edit(f"Upload failed for `{data['file_name']}`")
+                continue
 
-        await bot(
-            ForwardMessagesRequest(
+        if sent_id:
+            if shorturl and not is_premium:
+                db.set(shorturl, sent_id)
+            db.set(uuid, sent_id)
+
+            # ---- Forward video from PRIVATE_CHAT_ID to user (instant, no re-upload) ----
+            fwd_kwargs = dict(
                 from_peer=PRIVATE_CHAT_ID,
-                id=[file.id],
+                id=[sent_id],
                 to_peer=m.chat.id,
-                top_msg_id=m.id,
                 drop_author=True,
-                # noforwards=True,  #Uncomment it if you dont want to forward the media.
                 background=True,
                 drop_media_captions=False,
                 with_my_score=True,
             )
-        )
-        db.set(m.sender_id, time.monotonic(), ex=60)
-        db.set(
-            f"check_{m.sender_id}",
-            int(count) + 1 if count else 1,
-            ex=7200,
-        )
+            if m.is_group:
+                fwd_kwargs["top_msg_id"] = m.id
+            try:
+                await bot(ForwardMessagesRequest(**fwd_kwargs))
+            except Exception as e:
+                print("Forward failed:", e)
 
+            # Cleanup download file
+            try:
+                os.unlink(download)
+            except Exception:
+                pass
+
+            # Success message
+            try:
+                await hm.edit("✅ Video sent successfully to your chat!")
+            except Exception:
+                pass
+
+            db.set(
+                f"check_{m.sender_id}",
+                int(count) + 1 if count else 1,
+                ex=3600,
+            )
+
+
+
+# Define /cleandownloads command for admins to free VPS storage
+@bot.on(
+    events.NewMessage(
+        pattern="/cleandownloads",
+        incoming=True,
+        outgoing=False,
+        from_users=ADMINS,
+    )
+)
+async def clean_downloads(m: UpdateNewMessage):
+    if not os.path.isdir(DOWNLOAD_DIR):
+        return await m.reply("Downloads folder does not exist. Nothing to clean.")
+
+    files = [
+        os.path.join(DOWNLOAD_DIR, f)
+        for f in os.listdir(DOWNLOAD_DIR)
+        if os.path.isfile(os.path.join(DOWNLOAD_DIR, f))
+    ]
+
+    if not files:
+        return await m.reply("Downloads folder is already empty.")
+
+    total_size = sum(os.path.getsize(f) for f in files)
+
+    deleted = 0
+    for f in files:
+        try:
+            os.unlink(f)
+            deleted += 1
+        except Exception as e:
+            print(f"Failed to delete {f}: {e}")
+
+    if deleted:
+        return await m.reply(
+            f"Cleaned **{deleted}** file(s) and freed **{get_formatted_size(total_size)}** of storage."
+        )
+    return await m.reply("Could not delete any files. Check permissions.")
+
+
+# ---- Background cleanup task: auto-delete downloads older than 1 hour ----
+CLEANUP_INTERVAL = 3600  # 1 hour in seconds
+
+
+async def auto_cleanup_downloads():
+    """Periodically delete files in DOWNLOAD_DIR older than 1 hour."""
+    while True:
+        try:
+            await asyncio.sleep(CLEANUP_INTERVAL)
+            if not os.path.isdir(DOWNLOAD_DIR):
+                continue
+            now = time.time()
+            for filename in os.listdir(DOWNLOAD_DIR):
+                filepath = os.path.join(DOWNLOAD_DIR, filename)
+                if os.path.isfile(filepath):
+                    file_mtime = os.path.getmtime(filepath)
+                    if now - file_mtime > CLEANUP_INTERVAL:
+                        try:
+                            os.unlink(filepath)
+                            print(f"Auto-deleted old file: {filepath}")
+                        except Exception as e:
+                            print(f"Failed to auto-delete {filepath}: {e}")
+        except asyncio.CancelledError:
+            break
+
+
+# Start the cleanup task before running the bot
+cleanup_task = bot.loop.create_task(auto_cleanup_downloads())
 
 bot.start(bot_token=BOT_TOKEN)
 bot.run_until_disconnected()
+cleanup_task.cancel()
