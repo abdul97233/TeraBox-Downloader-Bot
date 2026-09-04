@@ -15,12 +15,14 @@ HOST = "127.0.0.1"
 PORT = 6379
 PASSWORD = None   # Set to None if Redis has no password
 
-
 # ================== BOT SETTINGS ==================
 
 # Private storage chat where files are uploaded
 # Use your private channel / chat ID (must be integer)
-PRIVATE_CHAT_ID = -1000000000000
+PRIVATE_CHAT_ID = -1001313190597
+
+# Folder where downloaded videos are stored on the VPS
+DOWNLOAD_DIR = "downloads"
 
 
 # Admin user IDs (MUST be integers)
@@ -43,3 +45,7 @@ TERABOX_API_TOKEN = "NTMPASS"
 TERABOX_API_TEMPLATE = (
     f"{TERABOX_API_BASE}?key={TERABOX_API_TOKEN}&url={{url}}"
 )
+
+# Self-hosted Telegram Bot API server (replaces https://api.telegram.org)
+# Enables high-speed uploads up to 2GB via the Bot HTTP API.
+TG_API_BASE = "https://saiyantg.saiyanprojects.com"
