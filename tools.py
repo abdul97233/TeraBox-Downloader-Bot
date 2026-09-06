@@ -421,10 +421,10 @@ async def download_file(
     callback=None,
 ) -> str | bool:
     try:
-        timeout = aiohttp.ClientTimeout(total=600, connect=15, sock_read=60)
+        timeout = aiohttp.ClientTimeout(total=3600, connect=15, sock_read=120)
         connector = aiohttp.TCPConnector(
             limit=10, force_close=False,
-            ttl_dns_cache=300, keepalive_timeout=60,
+            ttl_dns_cache=300, keepalive_timeout=120,
             enable_cleanup_closed=True,
         )
         headers = {
@@ -456,6 +456,14 @@ async def download_file(
                         downloaded += len(chunk)
                         if callback:
                             await callback(downloaded, total, "Downloading")
+
+        # Verify download is complete
+        if total > 0 and os.path.isfile(filename):
+            actual = os.path.getsize(filename)
+            if actual < total:
+                print(f"Incomplete download: {actual}/{total} bytes")
+                return False
+
         return filename
 
     except asyncio.TimeoutError:
