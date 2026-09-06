@@ -1335,10 +1335,14 @@ async def handle_message(m: Message):
     if db.sismember(BANNED_USERS_KEY, str(m.sender_id)):
         return await m.reply("🚫 You are banned from using this bot.")
 
-    # Anti-spam cooldown check
-    cooldown = check_cooldown(m.sender_id)
-    if cooldown > 0:
-        return await m.reply(f"⏳ Please wait **{cooldown} seconds** before downloading again.")
+    # Premium users skip cooldown and rate limits
+    is_premium = is_premium_user(m.sender_id)
+
+    # Anti-spam cooldown check (skip for premium/admin)
+    if not is_premium and not is_admin(m.sender_id):
+        cooldown = check_cooldown(m.sender_id)
+        if cooldown > 0:
+            return await m.reply(f"⏳ Please wait **{cooldown} seconds** before downloading again.")
 
     # Track active user today
     today_key = f"active_{time.strftime('%Y-%m-%d')}"
@@ -1365,7 +1369,6 @@ async def handle_message(m: Message):
     
     hm = await m.reply("Sending you the media wait...")
 
-    is_premium = is_premium_user(m.sender_id)
     count = db.get(f"check_{m.sender_id}")
 
     # Free user rate limit: 10 downloads per hour
@@ -1395,8 +1398,9 @@ async def handle_message(m: Message):
             f"Upgrade to **Premium** for unlimited."
         )
 
-    # Set cooldown after successful API call
-    set_cooldown(m.sender_id)
+    # Set cooldown after successful API call (skip for premium/admin)
+    if not is_premium and not is_admin(m.sender_id):
+        set_cooldown(m.sender_id)
 
     # Premium users get all files, free users get only the first one
     files_to_process = files if is_premium else files[:1]
