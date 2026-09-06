@@ -1925,9 +1925,12 @@ async def handle_message(m: Message):
             await hm.edit(f"Download failed for `{data['file_name']}`")
             continue
 
-        # ---- Add watermark (skip if file too small or invalid) ----
+        # ---- Add watermark (skip for small/unsupported files) ----
         file_size = os.path.getsize(download)
-        if file_size > 10240:  # Only watermark files > 10KB
+        fname_lower = data["file_name"].lower()
+        # Skip watermark for formats that ffmpeg can't process well
+        skip_wm = any(fname_lower.endswith(ext) for ext in [".ts", ".mkv", ".webm", ".flv", ".avi"])
+        if file_size > 10240 and not skip_wm:
             wm_result = await asyncio.get_event_loop().run_in_executor(
                 None, add_watermark, download
             )
