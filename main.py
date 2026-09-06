@@ -52,6 +52,7 @@ MAINTENANCE_KEY = "maintenance_mode"    # Redis STRING — "1" = maintenance on
 COOLDOWN_KEY = "download_cooldown"     # Redis STRING — user_id → timestamp
 DYNAMIC_ADMINS_KEY = "dynamic_admins"  # Redis SET — dynamically added admin IDs
 CUSTOM_TAGS_KEY = "custom_tags"        # Redis HASH — user_id → custom tag
+GC_USED_KEY = "gc_used"                # Redis HASH — code → "user_id:timestamp:days"
 MAX_FILES_PER_REQUEST = 10
 DOWNLOAD_COOLDOWN_SECONDS = 10
 
@@ -364,7 +365,9 @@ async def generate_gc(m: UpdateNewMessage):
     )
 
 
-# ==================== /gclist — LIST ALL GIFT CARDS ====================
+# ==================== /gclist — LIST ALL GIFT CARDS (WITH BUTTONS) ====================
+
+GC_LIST_PER_PAGE = 10
 
 @bot.on(
     events.NewMessage(
@@ -375,20 +378,124 @@ async def generate_gc(m: UpdateNewMessage):
     )
 )
 async def list_gc(m: UpdateNewMessage):
-    all_codes = db.hgetall(GC_REDIS_KEY)
-    if not all_codes:
+    unused = db.hgetall(GC_REDIS_KEY)
+    used = db.hgetall(GC_USED_KEY)
+
+    if not unused and not used:
         return await m.reply("No gift cards found.")
 
-    lines = []
-    for code, days in all_codes.items():
+    # Build combined list: unused first, then used
+    items = []
+    for code, days in unused.items():
         days = int(days)
-        label = "Permanent (Unlimited)" if days == 0 else f"{days} day(s)"
-        lines.append(f"`/redeem {code}` — {label}")
+        label = "Permanent" if days == 0 else f"{days}d"
+        items.append({"code": code, "status": "available", "label": label})
 
-    await m.reply(
-        f"**Gift Cards ({len(lines)}):**\n\n" + "\n".join(lines),
-        parse_mode="markdown",
+    for code, val in used.items():
+        parts = val.split(":")
+        uid = parts[0] if len(parts) > 0 else "?"
+        ts = parts[1] if len(parts) > 1 else "?"
+        days = int(parts[2]) if len(parts) > 2 else 0
+        label = "Permanent" if days == 0 else f"{days}d"
+        items.append({"code": code, "status": "used", "label": label, "user": uid, "time": ts})
+
+    total = len(items)
+    total_pages = max(1, (total + GC_LIST_PER_PAGE - 1) // GC_LIST_PER_PAGE)
+    page = 1
+
+    await _send_gc_list(m, items, page, total_pages, total)
+
+
+async def _send_gc_list(m, items, page, total_pages, total):
+    start = (page - 1) * GC_LIST_PER_PAGE
+    end = start + GC_LIST_PER_PAGE
+    page_items = items[start:end]
+
+    unused_count = sum(1 for i in items if i["status"] == "available")
+    used_count = total - unused_count
+
+    lines = []
+    for i, item in enumerate(page_items, start=start + 1):
+        if item["status"] == "available":
+            lines.append(f"{i}. `/redeem {item['code']}` — {item['label']} [Available]")
+        else:
+            user = item.get("user", "?")
+            lines.append(f"{i}. `{item['code']}` — {item['label']} [Used by `{user}`]")
+
+    text = (
+        f"**Gift Cards** ({total} total)\n"
+        f"Available: {unused_count} | Used: {used_count}\n"
+        f"Page {page}/{total_pages}\n\n" +
+        "\n".join(lines)
     )
+
+    buttons = []
+    nav = []
+    if page > 1:
+        nav.append(Button.inline("◀️ Prev", data=f"gcpage_{page - 1}_{total}"))
+    if page < total_pages:
+        nav.append(Button.inline("Next ▶️", data=f"gcpage_{page + 1}_{total}"))
+    if nav:
+        buttons.append(nav)
+    buttons.append([Button.inline("Refresh", data=f"gcpage_{page}_{total}")])
+
+    await m.reply(text, parse_mode="markdown", buttons=buttons)
+
+
+@bot.on(events.CallbackQuery(data=r"gcpage_(\d+)_(\d+)"))
+async def gc_page_cb(e):
+    page = int(e.pattern_match.group(1))
+    total = int(e.pattern_match.group(2))
+
+    unused = db.hgetall(GC_REDIS_KEY)
+    used = db.hgetall(GC_USED_KEY)
+
+    items = []
+    for code, days in unused.items():
+        days = int(days)
+        label = "Permanent" if days == 0 else f"{days}d"
+        items.append({"code": code, "status": "available", "label": label})
+    for code, val in used.items():
+        parts = val.split(":")
+        uid = parts[0] if len(parts) > 0 else "?"
+        days = int(parts[2]) if len(parts) > 2 else 0
+        label = "Permanent" if days == 0 else f"{days}d"
+        items.append({"code": code, "status": "used", "label": label, "user": uid})
+
+    total_pages = max(1, (len(items) + GC_LIST_PER_PAGE - 1) // GC_LIST_PER_PAGE)
+    start = (page - 1) * GC_LIST_PER_PAGE
+    end = start + GC_LIST_PER_PAGE
+    page_items = items[start:end]
+
+    unused_count = sum(1 for i in items if i["status"] == "available")
+    used_count = len(items) - unused_count
+
+    lines = []
+    for i, item in enumerate(page_items, start=start + 1):
+        if item["status"] == "available":
+            lines.append(f"{i}. `/redeem {item['code']}` — {item['label']} [Available]")
+        else:
+            user = item.get("user", "?")
+            lines.append(f"{i}. `{item['code']}` — {item['label']} [Used by `{user}`]")
+
+    text = (
+        f"**Gift Cards** ({len(items)} total)\n"
+        f"Available: {unused_count} | Used: {used_count}\n"
+        f"Page {page}/{total_pages}\n\n" +
+        "\n".join(lines)
+    )
+
+    buttons = []
+    nav = []
+    if page > 1:
+        nav.append(Button.inline("◀️ Prev", data=f"gcpage_{page - 1}_{len(items)}"))
+    if page < total_pages:
+        nav.append(Button.inline("Next ▶️", data=f"gcpage_{page + 1}_{len(items)}"))
+    if nav:
+        buttons.append(nav)
+    buttons.append([Button.inline("Refresh", data=f"gcpage_{page}_{len(items)}")])
+
+    await e.edit(text, parse_mode="markdown", buttons=buttons)
 
 
 # ==================== /gcdel — DELETE A GIFT CARD ====================
@@ -407,6 +514,134 @@ async def delete_gc(m: UpdateNewMessage):
         await m.reply(f"Deleted `{code}`.")
     else:
         await m.reply(f"Code `{code}` not found.")
+
+
+# ==================== /gctrack — TRACK GIFT CARD USAGE ====================
+
+@bot.on(
+    events.NewMessage(
+        pattern=r"/gctrack(?:\s+(\S+))?",
+        incoming=True,
+        outgoing=False,
+        func=lambda m: is_admin(m.sender_id),
+    )
+)
+async def track_gc(m: UpdateNewMessage):
+    filter_type = m.pattern_match.group(1)
+
+    used = db.hgetall(GC_USED_KEY)
+    if not used:
+        return await m.reply("No redeemed gift cards found.")
+
+    now = int(time.time())
+    results = []
+
+    for code, val in used.items():
+        parts = val.split(":")
+        uid = parts[0] if len(parts) > 0 else "?"
+        ts = int(parts[1]) if len(parts) > 1 else 0
+        days = int(parts[2]) if len(parts) > 2 else 0
+
+        age_hours = (now - ts) / 3600 if ts else 0
+        label = "Permanent" if days == 0 else f"{days}d"
+        from datetime import datetime
+        time_str = datetime.fromtimestamp(ts).strftime("%d %b %Y, %I:%M %p") if ts else "?"
+
+        entry = {
+            "code": code, "user": uid, "days": label,
+            "time": time_str, "age_hours": round(age_hours, 1),
+        }
+
+        if filter_type == "1h" and age_hours > 1:
+            continue
+        elif filter_type == "24h" and age_hours > 24:
+            continue
+        elif filter_type == "7d" and age_hours > 168:
+            continue
+        elif filter_type and filter_type.isdigit():
+            if uid != filter_type:
+                continue
+
+        results.append(entry)
+
+    if not results:
+        return await m.reply("No matching gift cards found.")
+
+    lines = []
+    for r in results:
+        lines.append(
+            f"`{r['code']}` — {r['days']}\n"
+            f"  User: `{r['user']}`\n"
+            f"  Time: {r['time']} ({r['age_hours']}h ago)"
+        )
+
+    text = f"**Gift Card Usage** ({len(results)} found)\n\n" + "\n\n".join(lines)
+    if len(text) > 3000:
+        text = text[:3000] + "\n\n... (truncated)"
+
+    buttons = [
+        [Button.inline("Last 1h", data="gctrack_1h"),
+         Button.inline("Last 24h", data="gctrack_24h"),
+         Button.inline("Last 7d", data="gctrack_7d")],
+        [Button.inline("All", data="gctrack_all")],
+    ]
+
+    await m.reply(text, parse_mode="markdown", buttons=buttons)
+
+
+@bot.on(events.CallbackQuery(data=r"gctrack_(\w+)"))
+async def gctrack_cb(e):
+    filter_type = e.pattern_match.group(1)
+    used = db.hgetall(GC_USED_KEY)
+    now = int(time.time())
+    results = []
+
+    for code, val in used.items():
+        parts = val.split(":")
+        uid = parts[0] if len(parts) > 0 else "?"
+        ts = int(parts[1]) if len(parts) > 1 else 0
+        days = int(parts[2]) if len(parts) > 2 else 0
+
+        age_hours = (now - ts) / 3600 if ts else 0
+        label = "Permanent" if days == 0 else f"{days}d"
+        from datetime import datetime
+        time_str = datetime.fromtimestamp(ts).strftime("%d %b %Y, %I:%M %p") if ts else "?"
+
+        if filter_type == "1h" and age_hours > 1:
+            continue
+        elif filter_type == "24h" and age_hours > 24:
+            continue
+        elif filter_type == "7d" and age_hours > 168:
+            continue
+
+        results.append({
+            "code": code, "user": uid, "days": label,
+            "time": time_str, "age_hours": round(age_hours, 1),
+        })
+
+    if not results:
+        return await e.answer("No results for this filter.", alert=True)
+
+    lines = []
+    for r in results:
+        lines.append(
+            f"`{r['code']}` — {r['days']}\n"
+            f"  User: `{r['user']}`\n"
+            f"  Time: {r['time']} ({r['age_hours']}h ago)"
+        )
+
+    text = f"**Gift Card Usage** ({len(results)} found)\n\n" + "\n\n".join(lines)
+    if len(text) > 3000:
+        text = text[:3000] + "\n\n... (truncated)"
+
+    buttons = [
+        [Button.inline("Last 1h", data="gctrack_1h"),
+         Button.inline("Last 24h", data="gctrack_24h"),
+         Button.inline("Last 7d", data="gctrack_7d")],
+        [Button.inline("All", data="gctrack_all")],
+    ]
+
+    await e.edit(text, parse_mode="markdown", buttons=buttons)
 
 
 # ==================== /redeem — REDEEM GIFT CARD ====================
@@ -437,6 +672,8 @@ async def redeem_gc(m: UpdateNewMessage):
 
     days = int(days_str)
     db.hdel(GC_REDIS_KEY, code)
+    # Track who used this code
+    db.hset(GC_USED_KEY, code, f"{user_id}:{int(time.time())}:{days}")
     # Mark user as having redeemed a gift card (permanent record)
     db.set(f"gc_redeemed_{user_id}", "1")
 
