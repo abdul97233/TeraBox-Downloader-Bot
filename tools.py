@@ -17,6 +17,16 @@ VIDEO_EXTENSIONS = (".mp4", ".mkv", ".webm", ".mov", ".avi", ".flv", ".wmv", ".m
 WATERMARK_TEXT = "@TERA_NTM_BOT"
 FFMPEG_PATH = shutil.which("ffmpeg")
 
+# Try to find a valid font on the system
+FONT_PATH = None
+for f in ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+          "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+          "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+          "/usr/share/fonts/TTF/DejaVuSans.ttf"]:
+    if os.path.isfile(f):
+        FONT_PATH = f
+        break
+
 
 def add_watermark(input_path: str) -> str | bool:
     """Add watermark to video using ffmpeg. Returns watermarked file path or False."""
@@ -26,9 +36,20 @@ def add_watermark(input_path: str) -> str | bool:
 
     output_path = input_path + ".wm.mp4"
     try:
-        cmd = [
-            FFMPEG_PATH, "-y", "-i", input_path,
-            "-vf", (
+        # Build drawtext filter with font path if available
+        if FONT_PATH:
+            drawtext = (
+                f"drawtext=text='{WATERMARK_TEXT}':"
+                f"fontfile='{FONT_PATH}':"
+                "fontcolor=white@0.7:"
+                "fontsize=24:"
+                "borderw=2:"
+                "bordercolor=black@0.5:"
+                "x=10:"
+                "y=10"
+            )
+        else:
+            drawtext = (
                 f"drawtext=text='{WATERMARK_TEXT}':"
                 "fontcolor=white@0.7:"
                 "fontsize=24:"
@@ -36,8 +57,12 @@ def add_watermark(input_path: str) -> str | bool:
                 "bordercolor=black@0.5:"
                 "x=10:"
                 "y=10:"
-                "font=Arial"
-            ),
+                "font=Sans"
+            )
+
+        cmd = [
+            FFMPEG_PATH, "-y", "-i", input_path,
+            "-vf", drawtext,
             "-c:a", "copy",
             "-preset", "fast",
             "-crf", "23",

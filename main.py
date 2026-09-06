@@ -1880,30 +1880,32 @@ async def handle_message(m: Message):
 
             if not cansend.can_send():
                 return
+            if total_downloaded == 0:
+                return
+
             bar_length = 20
-            percent = current_downloaded / total_downloaded
-            arrow = "█" * int(percent * bar_length)
-            spaces = "░" * (bar_length - len(arrow))
+            percent = min(current_downloaded / total_downloaded, 1.0)
+            filled = int(percent * bar_length)
+            arrow = "█" * filled
+            spaces = "░" * (bar_length - filled)
 
             elapsed_time = time.time() - start_time
+            if elapsed_time < 0.5:
+                return
 
-            head_text = f"{state} {label}`{data['file_name']}`"
-            bar_text = f"[{arrow + spaces}] {percent:.2%}"
-            upload_speed = current_downloaded / elapsed_time if elapsed_time > 0 else 0
-            speed_mbps = upload_speed / (1024 * 1024)
-            speed_line = f"Speed: **{speed_mbps:.2f} MB/s**"
+            speed = current_downloaded / elapsed_time if elapsed_time > 0 else 0
+            speed_mb = speed / (1024 * 1024)
 
-            time_remaining = (
-                (total_downloaded - current_downloaded) / upload_speed
-                if upload_speed > 0
-                else 0
-            )
-            time_line = f"Time Remaining: `{convert_seconds(time_remaining)}`"
+            remaining = (total_downloaded - current_downloaded) / speed if speed > 0 else 0
 
-            size_line = f"Size: **{get_formatted_size(current_downloaded)}** / **{get_formatted_size(total_downloaded)}**"
+            head = f"{state} {label}`{data['file_name']}`"
+            bar = f"[{arrow}{spaces}] {percent:.0%}"
+            spd = f"Speed: {speed_mb:.1f} MB/s"
+            eta = f"ETA: {convert_seconds(remaining)}"
+            sz = f"Size: {get_formatted_size(current_downloaded)} / {get_formatted_size(total_downloaded)}"
 
             await hm.edit(
-                f"{head_text}\n{bar_text}\n{speed_line}\n{time_line}\n{size_line}",
+                f"{head}\n{bar}\n{spd} | {eta}\n{sz}",
                 parse_mode="markdown",
             )
 
