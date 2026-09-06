@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlparse
 
 import aiohttp
 
-from config import TERABOX_API_TEMPLATE
+from config import TERABOX_API_TEMPLATE, TERABOX_FALLBACK_API_TEMPLATE
 from tools import get_formatted_size
 
 
@@ -102,12 +102,12 @@ async def retry_request(method, url, attempts=3, delay=2, **kwargs):
 
 # ---------------- MAIN API HANDLER ---------------- #
 
-async def get_files(url: str):
-    """Async: Fetch ALL Terabox file data via Saiyan API."""
-    api_url = TERABOX_API_TEMPLATE.format(url=url)
+async def _fetch_files_from_api(api_template: str, url: str):
+    """Helper: fetch files from a single API template."""
+    api_url = api_template.format(url=url)
     print("\nREQUESTING API:", api_url)
 
-    res = await retry_request("GET", api_url, attempts=3, delay=2)
+    res = await retry_request("GET", api_url, attempts=2, delay=2)
     if not res:
         print("API failed after retries")
         return False
@@ -151,6 +151,22 @@ async def get_files(url: str):
         return False
 
     return result
+
+
+async def get_files(url: str):
+    """Async: Fetch files via primary API, fallback to secondary if it fails."""
+    # Try primary API first
+    result = await _fetch_files_from_api(TERABOX_API_TEMPLATE, url)
+    if result:
+        return result
+
+    # Fallback to secondary API
+    print("\nPrimary API failed, trying fallback API...")
+    result = await _fetch_files_from_api(TERABOX_FALLBACK_API_TEMPLATE, url)
+    if result:
+        return result
+
+    return False
 
 
 async def get_data(url: str):

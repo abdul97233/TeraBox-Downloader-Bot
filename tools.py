@@ -1,6 +1,8 @@
 import asyncio
 import os
 import re
+import shutil
+import subprocess
 from io import BytesIO
 from urllib.parse import parse_qs, urlparse
 
@@ -11,6 +13,52 @@ from telethon import TelegramClient
 
 
 VIDEO_EXTENSIONS = (".mp4", ".mkv", ".webm", ".mov", ".avi", ".flv", ".wmv", ".m4v", ".mpg", ".mpeg", ".3gp", ".ts", ".vob", ".ogv", ".mts", ".m2ts", ".divx", ".asf", ".rm", ".rmvb")
+
+WATERMARK_TEXT = "@TERA_NTM_BOT"
+FFMPEG_PATH = shutil.which("ffmpeg")
+
+
+def add_watermark(input_path: str) -> str | bool:
+    """Add watermark to video using ffmpeg. Returns watermarked file path or False."""
+    if not FFMPEG_PATH:
+        print("ffmpeg not found, skipping watermark")
+        return False
+
+    output_path = input_path + ".wm.mp4"
+    try:
+        cmd = [
+            FFMPEG_PATH, "-y", "-i", input_path,
+            "-vf", (
+                f"drawtext=text='{WATERMARK_TEXT}':"
+                "fontcolor=white@0.7:"
+                "fontsize=24:"
+                "borderw=2:"
+                "bordercolor=black@0.5:"
+                "x=10:"
+                "y=10:"
+                "font=Arial"
+            ),
+            "-c:a", "copy",
+            "-preset", "fast",
+            "-crf", "23",
+            output_path,
+        ]
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=600
+        )
+        if result.returncode == 0 and os.path.isfile(output_path):
+            os.replace(output_path, input_path)
+            return input_path
+        else:
+            print(f"ffmpeg watermark error: {result.stderr[:500]}")
+            if os.path.exists(output_path):
+                os.unlink(output_path)
+            return False
+    except Exception as e:
+        print(f"Watermark failed: {e}")
+        if os.path.exists(output_path):
+            os.unlink(output_path)
+        return False
 
 
 def get_video_info(file_path: str) -> dict:
