@@ -2521,7 +2521,7 @@ async def set_plan(m: UpdateNewMessage):
 
 @bot.on(
     events.NewMessage(
-        pattern="/mp3",
+        pattern=r"^/mp3$",
         incoming=True,
         outgoing=False,
     )
@@ -2530,14 +2530,16 @@ async def mp3_reply_handler(m: UpdateNewMessage):
     if not m.is_reply:
         return await m.reply(
             "Usage: Reply to a video with `/mp3`\n\n"
-            "Example:\n"
-            "1. Send a video\n"
+            "Steps:\n"
+            "1. Send or forward a video\n"
             "2. Reply to it with `/mp3`\n"
-            "3. Get audio in seconds"
+            "3. Wait for audio"
         )
 
-    replied = await m.get_message()
-    if not replied or not replied.media:
+    replied = await m.get_reply_message()
+    if not replied:
+        return await m.reply("Could not find the replied message. Try again.")
+    if not replied.media:
         return await m.reply("Replied message has no media.")
 
     import shutil as _shutil
@@ -2592,7 +2594,7 @@ async def mp3_reply_handler(m: UpdateNewMessage):
 
 @bot.on(
     events.NewMessage(
-        pattern=r"/compress(?:\s+(\w+))?",
+        pattern=r"^/compress(?:\s+(\w+))?$",
         incoming=True,
         outgoing=False,
     )
@@ -2611,8 +2613,10 @@ async def compress_reply_handler(m: UpdateNewMessage):
         )
 
     quality = (m.pattern_match.group(1) or "mid").lower()
-    replied = await m.get_message()
-    if not replied or not replied.media:
+    replied = await m.get_reply_message()
+    if not replied:
+        return await m.reply("Could not find the replied message. Try again.")
+    if not replied.media:
         return await m.reply("Replied message has no media.")
 
     import shutil as _shutil
