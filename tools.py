@@ -92,7 +92,7 @@ def add_watermark(input_path: str) -> str | bool:
             output_path,
         ]
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=600
+            cmd, capture_output=True, text=True, timeout=900
         )
         if result.returncode == 0 and os.path.isfile(output_path):
             os.replace(output_path, input_path)
