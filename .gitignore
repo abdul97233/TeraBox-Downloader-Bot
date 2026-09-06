@@ -1,0 +1,11 @@
+config.py
+config.example.py
+*.session
+*.session-journal
+__pycache__/
+venv/
+.venv/
+bot.log
+downloads/
+Tera.zip
+Teraaaa.zip
