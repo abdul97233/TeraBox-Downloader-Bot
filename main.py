@@ -641,7 +641,7 @@ async def cb_howto(e):
 mp4, mkv, webm, mov, avi, flv, wmv, m4v, mpg, mpeg, 3gp, ts, and more...
 
 **Commands:**
-`/dl 720p <link>` — Choose quality
+`/dl <link>` — Download video
 `/folder <link>` — Download entire folder
 `/mp3` — Reply to video → extract audio
 `/compress` — Reply to video → compress
@@ -774,8 +774,7 @@ async def cb_tools(e):
 ┗━━━━━━━━━━━━━━━━━━━━━⍟
 
 **📥 Download Tools:**
-`/dl 720p <link>` — Choose quality
-`/dl 1080p <link>` — Full HD
+`/dl <link>` — Download video
 `/folder <link>` — Entire folder (⭐)
 
 **🎵 Media Tools:**
@@ -1313,6 +1312,7 @@ async def demote_all_premium(m: UpdateNewMessage):
         incoming=True,
         outgoing=False,
         func=lambda message: message.text
+        and not message.text.startswith("/")
         and get_urls_from_string(message.text)
         and message.is_private,
     )
@@ -1905,7 +1905,7 @@ async def admin_commands(m: UpdateNewMessage):
 **── Media Tools ──**
 /mp3 — Reply to video → extract audio
 /compress `[low|mid]` — Reply to video → compress
-/dl `<quality>` `<link>` — Download in specific quality
+/dl `<link>` — Download video
 /folder `<link>` — Download entire folder (premium)
 /setthumb — Reply to image → set thumbnail (premium)
 /removethumb — Remove custom thumbnail
@@ -2123,32 +2123,19 @@ async def set_language(m: UpdateNewMessage):
     await m.reply(t(m.sender_id, "lang_set", lang=LANGUAGES[lang_code]))
 
 
-# ==================== QUALITY SELECTOR — /dl <quality> ====================
-
-QUALITY_MAP = {
-    "144p": 144, "240p": 240, "360p": 360, "480p": 480,
-    "720p": 720, "1080p": 1080, "1440p": 1440, "2160p": 2160,
-}
+# ==================== DOWNLOAD — /dl <link> ====================
 
 @bot.on(
     events.NewMessage(
-        pattern=r"/dl(?:\s+(\w+))?\s+(https?://\S+)",
+        pattern=r"/dl(?:\s+)?(https?://\S+)",
         incoming=True,
         outgoing=False,
     )
 )
-async def quality_download(m: UpdateNewMessage):
-    quality = m.pattern_match.group(1)
-    url = m.pattern_match.group(2)
-
-    if not quality:
-        quality = "720p"
-    quality = quality.lower()
-    if quality not in QUALITY_MAP:
-        q_list = ", ".join(QUALITY_MAP.keys())
-        return await m.reply(f"Invalid quality: `{quality}`\nValid: {q_list}\n\nUsage: `/dl 720p <link>`")
-
-    # Re-use the same handle_message flow by setting text
+async def dl_command(m: UpdateNewMessage):
+    url = m.pattern_match.group(1)
+    if not url:
+        return await m.reply("Usage: `/dl <terabox_link>`")
     m.text = url
     await handle_message(m)
 
@@ -2541,10 +2528,16 @@ async def set_plan(m: UpdateNewMessage):
 )
 async def mp3_reply_handler(m: UpdateNewMessage):
     if not m.is_reply:
-        return await m.reply("Reply to a video message with `/mp3` to extract audio.")
+        return await m.reply(
+            "Usage: Reply to a video with `/mp3`\n\n"
+            "Example:\n"
+            "1. Send a video\n"
+            "2. Reply to it with `/mp3`\n"
+            "3. Get audio in seconds"
+        )
 
     replied = await m.get_message()
-    if not replied.media:
+    if not replied or not replied.media:
         return await m.reply("Replied message has no media.")
 
     import shutil as _shutil
@@ -2552,15 +2545,15 @@ async def mp3_reply_handler(m: UpdateNewMessage):
         return await m.reply("ffmpeg not installed on server.")
 
     msg = await m.reply("Extracting audio...")
+    video_path = None
+    audio_path = None
     try:
-        # Download the video
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
         video_path = os.path.join(DOWNLOAD_DIR, f"mp3_{uuid4().hex}.mp4")
         audio_path = video_path.replace(".mp4", ".mp3")
 
         await bot.download_media(replied, video_path)
 
-        # Extract audio with ffmpeg
         cmd = [
             "ffmpeg", "-y", "-i", video_path,
             "-vn", "-acodec", "libmp3lame", "-ab", "192k",
@@ -2569,25 +2562,30 @@ async def mp3_reply_handler(m: UpdateNewMessage):
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
 
         if result.returncode != 0 or not os.path.isfile(audio_path):
-            return await msg.edit("Failed to extract audio.")
+            return await msg.edit("Failed to extract audio. The file may not be a valid video.")
 
-        # Get filename
+        original_size = os.path.getsize(video_path) / (1024 * 1024)
+        audio_size = os.path.getsize(audio_path) / (1024 * 1024)
+
         caption = replied.text or "Audio"
         await bot.send_file(
             m.chat.id,
             file=audio_path,
-            caption=f"🎵 {caption}",
+            caption=f"Audio extracted!\nOriginal: {original_size:.1f}MB -> Audio: {audio_size:.1f}MB",
             voice_note=True,
         )
         await msg.delete()
+    except asyncio.TimeoutError:
+        await msg.edit("Audio extraction timed out. File too large.")
     except Exception as e:
-        await msg.edit(f"Error: `{e}`")
+        await msg.edit(f"Failed: {e}")
     finally:
         for f in [video_path, audio_path]:
-            try:
-                os.unlink(f)
-            except Exception:
-                pass
+            if f:
+                try:
+                    os.unlink(f)
+                except Exception:
+                    pass
 
 
 # ==================== VIDEO COMPRESS — /compress ====================
@@ -2601,11 +2599,20 @@ async def mp3_reply_handler(m: UpdateNewMessage):
 )
 async def compress_reply_handler(m: UpdateNewMessage):
     if not m.is_reply:
-        return await m.reply("Reply to a video with `/compress` or `/compress low`.\nQualities: `low` (480p), `mid` (720p), default is mid.")
+        return await m.reply(
+            "Usage: Reply to a video with `/compress`\n\n"
+            "Options:\n"
+            "- `/compress` — Normal compression (720p)\n"
+            "- `/compress low` — Heavy compression (480p)\n\n"
+            "Example:\n"
+            "1. Send a video\n"
+            "2. Reply to it with `/compress low`\n"
+            "3. Get compressed video"
+        )
 
     quality = (m.pattern_match.group(1) or "mid").lower()
     replied = await m.get_message()
-    if not replied.media:
+    if not replied or not replied.media:
         return await m.reply("Replied message has no media.")
 
     import shutil as _shutil
@@ -2618,7 +2625,8 @@ async def compress_reply_handler(m: UpdateNewMessage):
     res = res_map.get(quality, "1280:-2")
 
     msg = await m.reply(f"Compressing video ({quality})... This may take a while.")
-
+    video_path = None
+    out_path = None
     try:
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
         video_path = os.path.join(DOWNLOAD_DIR, f"compress_{uuid4().hex}.mp4")
@@ -2636,7 +2644,7 @@ async def compress_reply_handler(m: UpdateNewMessage):
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
 
         if result.returncode != 0 or not os.path.isfile(out_path):
-            return await msg.edit("Compression failed.")
+            return await msg.edit("Compression failed. The file may not be a valid video.")
 
         original_size = os.path.getsize(video_path) / (1024 * 1024)
         compressed_size = os.path.getsize(out_path) / (1024 * 1024)
@@ -2646,18 +2654,21 @@ async def compress_reply_handler(m: UpdateNewMessage):
         await bot.send_file(
             m.chat.id,
             file=out_path,
-            caption=f"📦 {caption}\n\nOriginal: {original_size:.1f}MB → Compressed: {compressed_size:.1f}MB\nSaved: {saved:.1f}MB",
+            caption=f"Compressed!\nOriginal: {original_size:.1f}MB -> Compressed: {compressed_size:.1f}MB\nSaved: {saved:.1f}MB",
             supports_streaming=True,
         )
         await msg.delete()
+    except asyncio.TimeoutError:
+        await msg.edit("Compression timed out. File too large.")
     except Exception as e:
-        await msg.edit(f"Error: `{e}`")
+        await msg.edit(f"Failed: {e}")
     finally:
         for f in [video_path, out_path]:
-            try:
-                os.unlink(f)
-            except Exception:
-                pass
+            if f:
+                try:
+                    os.unlink(f)
+                except Exception:
+                    pass
 
 
 # ==================== AUTO-ANNOUNCE / SCHEDULED BROADCAST ====================
