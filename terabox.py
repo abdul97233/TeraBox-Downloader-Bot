@@ -105,7 +105,7 @@ async def retry_request(method, url, attempts=3, delay=2, **kwargs):
 async def _fetch_files_from_api(api_template: str, url: str):
     """Helper: fetch files from a single API template."""
     api_url = api_template.format(url=url)
-    print("\nREQUESTING API:", api_url)
+    print("\nREQUESTING API:", api_url, flush=True)
 
     res = await retry_request("GET", api_url, attempts=2, delay=2)
     if not res:

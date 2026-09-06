@@ -54,7 +54,7 @@ _ensure_font()
 def add_watermark(input_path: str) -> str | bool:
     """Add watermark to video using ffmpeg. Returns watermarked file path or False."""
     if not FFMPEG_PATH:
-        print("ffmpeg not found, skipping watermark")
+        print("ffmpeg not found, skipping watermark", flush=True)
         return False
 
     output_path = input_path + ".wm.mp4"
@@ -461,7 +461,7 @@ async def download_file(
         if total > 0 and os.path.isfile(filename):
             actual = os.path.getsize(filename)
             if actual < total:
-                print(f"Incomplete download: {actual}/{total} bytes")
+                print(f"Incomplete download: {actual}/{total} bytes", flush=True)
                 return False
 
         return filename

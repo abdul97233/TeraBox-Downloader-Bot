@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -1933,12 +1934,14 @@ async def handle_message(m: Message):
         # ---- Add watermark (skip for small/unsupported files) ----
         file_size = os.path.getsize(download)
         fname_lower = data["file_name"].lower()
-        # Skip watermark for formats that ffmpeg can't process well
         skip_wm = any(fname_lower.endswith(ext) for ext in [".ts", ".mkv", ".webm", ".flv", ".avi"])
         if file_size > 10240 and not skip_wm:
+            await hm.edit(f"Adding watermark to `{data['file_name']}`...")
             wm_result = await asyncio.get_event_loop().run_in_executor(
                 None, add_watermark, download
             )
+            if not wm_result:
+                print(f"Watermark skipped for: {data['file_name']}")
         else:
             wm_result = False
 
@@ -1992,6 +1995,7 @@ async def handle_message(m: Message):
             thumbnail = download_image_to_bytesio(vthumb, "thumb.jpg")
 
         # ---- Upload via self-hosted Telegram Bot API (2GB / high speed) ----
+        await hm.edit(f"Uploading `{data['file_name']}`...")
         sent_id = None
         try:
             api_res = await send_document_via_api(
@@ -2000,11 +2004,11 @@ async def handle_message(m: Message):
             )
             if api_res.get("ok"):
                 sent_id = api_res["result"]["message_id"]
-                print("Uploaded via custom Bot API, message_id:", sent_id)
+                print("Uploaded via custom Bot API, message_id:", sent_id, flush=True)
             else:
-                print("Custom Bot API error:", api_res)
+                print("Custom Bot API error:", api_res, flush=True)
         except Exception as e:
-            print("Custom Bot API upload failed:", e)
+            print("Custom Bot API upload failed:", e, flush=True)
 
         # ---- Fallback to Telethon MTProto upload if Bot API path failed ----
         if sent_id is None:
@@ -2023,7 +2027,7 @@ async def handle_message(m: Message):
                 )
                 sent_id = file.id
             except Exception as e:
-                print("Telethon upload failed:", e)
+                print("Telethon upload failed:", e, flush=True)
                 try:
                     os.unlink(download)
                 except Exception:
@@ -3443,6 +3447,8 @@ async def list_admins(m: UpdateNewMessage):
 # Start the cleanup task before running the bot
 cleanup_task = bot.loop.create_task(auto_cleanup_downloads())
 
+print("Bot starting...", flush=True)
 bot.start(bot_token=BOT_TOKEN)
+print("Bot is running!", flush=True)
 bot.run_until_disconnected()
 cleanup_task.cancel()
