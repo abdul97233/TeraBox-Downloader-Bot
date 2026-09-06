@@ -21,7 +21,8 @@ FONT_PATH = os.path.join(BUNDLE_DIR, "font.ttf")
 
 
 def _ensure_font():
-    """Download font if not present."""
+    """Download font if not present. Updates FONT_PATH globally."""
+    global FONT_PATH
     if os.path.isfile(FONT_PATH):
         return
     font_urls = [
@@ -42,7 +43,6 @@ def _ensure_font():
               "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
               "/usr/share/fonts/TTF/DejaVuSans.ttf"]:
         if os.path.isfile(f):
-            global FONT_PATH
             FONT_PATH = f
             return
     FONT_PATH = None
