@@ -1,806 +1,335 @@
-# 🚀 TeraBox Downloader Bot
+<div align="center">
 
-<p align="center">
-  <h1 align="center">TeraBox Downloader Bot</h1>
-</p>
+<img src="https://socialify.git.ci/abdul97233/TeraBox-Downloader-Bot/image?description=1&descriptionEditable=Download%20TeraBox%20videos%20instantly%20via%20Telegram%20Bot&font=Bitter&forks=1&issues=1&language=1&name=1&owner=1&pattern=Overlapping%20Hexagons&pulls=1&stargazers=1&theme=Dark" alt="TeraBox Downloader Bot" width="640" />
 
-<p align="center">
-  A powerful Telegram bot built with Python for downloading and processing files from TeraBox links directly through Telegram.
-</p>
+# TeraBox Downloader Bot
 
-<p align="center">
-  <img src="https://socialify.git.ci/abdul97233/TeraBox-Downloader-Bot/image?description=1&descriptionEditable=Telegram%20bot%20in%20Python%20enabling%20seamless%20file%20downloads%20from%20Terabox%20links.&font=Bitter&forks=1&issues=1&language=1&name=1&owner=1&pattern=Overlapping%20Hexagons&pulls=1&stargazers=1&theme=Dark" alt="TeraBox Downloader Bot" width="640" />
-</p>
+**Download TeraBox videos instantly through Telegram — fast, free, and feature-packed.**
 
-<p align="center">
-  <a href="https://github.com/abdul97233/TeraBox-Downloader-Bot">
-    <img src="https://img.shields.io/github/repo-size/abdul97233/TeraBox-Downloader-Bot?color=yellow" alt="Repository Size">
-  </a>
-  <a href="https://github.com/abdul97233/TeraBox-Downloader-Bot/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/abdul97233/TeraBox-Downloader-Bot" alt="License">
-  </a>
-  <img src="https://img.shields.io/github/commit-activity/m/abdul97233/TeraBox-Downloader-Bot" alt="Commit Activity">
-</p>
+[![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/tera_NTM_bot)
+[![License](https://img.shields.io/badge/License-GPL%20v3-green?style=flat-square)](LICENSE)
+[![Redis](https://img.shields.io/badge/Redis-7.0+-DC382D?style=flat-square&logo=redis&logoColor=white)](https://redis.io)
 
-<p align="center">
-  <a href="https://t.me/tera_NTM_bot">🤖 Main Bot</a> •
-  <a href="https://t.me/tera2_NTM_bot">🤖 Backup Bot</a> •
-  <a href="https://t.me/ntmchat">💬 Support Group</a> •
-  <a href="https://t.me/ntmpro">📢 Telegram Channel</a>
-</p>
+<br>
+
+[🤖 Try Bot](https://t.me/tera_NTM_bot) • [💬 Support Group](https://t.me/ntmchat) • [📢 Channel](https://t.me/ntmpro) • [⭐ GitHub](https://github.com/abdul97233/TeraBox-Downloader-Bot)
+
+</div>
 
 ---
 
-## 📖 About
+## How It Works
 
-**TeraBox Downloader Bot** is a Python-based Telegram bot designed to make downloading files from TeraBox simple and convenient.
-
-Users can send supported TeraBox links to the bot, and the bot processes the link and provides the available file or download information directly through Telegram.
-
-The project includes a **Free/Premium user system**, anti-spam protection, gift-card support, Redis-based data storage, administrator controls, broadcasting, and Telegram-based file storage.
-
----
-
-## ✨ Features
-
-### 📥 Download Features
-
-* 🔗 Process TeraBox links directly through Telegram
-* 🎬 Direct video support
-* 🔗 Direct download links
-* ⚡ Fast file processing and downloading
-* 📦 Telegram-based file delivery
-* ☁️ Private Telegram storage support
-* 🔄 Easy to update and maintain
-
-### 👤 User System
-
-* 🆓 Free user support
-* 💎 Premium user support
-* ⏱️ Configurable anti-spam protection
-* 🎁 Gift-card redemption
-* 📊 User information
-* ❤️ Bot health/ping command
-* 📋 Plan information
-
-### 🛡️ Protection & Management
-
-* 🚫 Anti-spam system
-* ⏳ User cooldown system
-* 👑 Premium user management
-* 🔐 Admin-only commands
-* 📢 Broadcast system
-* 📝 Logging support
-* 🗄️ Redis database support
-
----
-
-# 💎 Free vs Premium
-
-| Feature              |  Free User | Premium User |
-| -------------------- | ---------: | -----------: |
-| TeraBox downloads    |          ✅ |            ✅ |
-| Direct video         |          ✅ |            ✅ |
-| Direct download link |          ✅ |            ✅ |
-| Anti-spam cooldown   | 60 seconds |   30 seconds |
-| Premium commands     |          ❌ |            ✅ |
-| Gift-card redemption |          ❌ |            ✅ |
-| Priority access      |          ❌ |            ✅ |
-
-> **Note:** Premium limits and cooldowns can be customized according to your bot configuration.
-
----
-
-# 🤖 Bot Commands
-
-## 👤 User Commands
-
-| Command          | Description                  |
-| ---------------- | ---------------------------- |
-| `/start`         | Start the bot                |
-| `/help`          | Display help information     |
-| `/cmds`          | Show available commands      |
-| `/info`          | Display user information     |
-| `/id`            | Display Telegram user ID     |
-| `/ping`          | Check bot/server response    |
-| `/plan`          | View available premium plans |
-| `/redeem <code>` | Redeem a premium gift card   |
-
-### Example
-
-```text
-/redeem ABCD-1234-EFGH
+```
+You send a TeraBox link
+        ↓
+Bot fetches file info (with fallback API)
+        ↓
+Downloads + adds watermark
+        ↓
+Uploads to Telegram (2GB fast upload)
+        ↓
+Forwards to you instantly
 ```
 
----
-
-# 👑 Admin Commands
-
-Admin commands are restricted to authorized administrators.
-
-| Command                | Description                      |
-| ---------------------- | -------------------------------- |
-| `/gc`                  | Generate premium gift cards      |
-| `/pre`                 | Promote a user to Premium        |
-| `/de`                  | Demote a Premium user to Free    |
-| `/broadcast`           | Broadcast a message to bot users |
-| `/premium_users`       | View Premium users               |
-| `/remove_premium_user` | Remove Premium status from users |
-
-> ⚠️ Never share your administrator Telegram ID configuration or bot credentials publicly.
+**That's it. No ads, no waiting, no nonsense.**
 
 ---
 
-# 🎁 Premium Gift Cards
+## Features
 
-The bot includes a gift-card based Premium system.
+### Download
+- Send any TeraBox link → instant download
+- **39+ supported domains** (terabox.com, 1024terabox.com, dubox, mirrobox, etc.)
+- **20+ video formats** (mp4, mkv, webm, mov, avi, flv, wmv, etc.)
+- Quality selector — `/dl 720p <link>` or `/dl 1080p <link>`
+- Folder download — `/folder <link>` (premium)
+- Batch multi-file download
+- Fallback API — if primary fails, auto-tries secondary
 
-The basic workflow is:
+### Premium System
+- Time-based expiry (1d, 2d, 3d, 7d, 1w, 1m, unlimited)
+- Gift card system with duration
+- 1 GC per user per premium cycle
+- Unlimited downloads, no size limit, multi-file
+- Custom thumbnail for premium users
 
-```text
-Administrator
-      │
-      ▼
-Generate Gift Card
-      │
-      ▼
-Share Code With User
-      │
-      ▼
-User Uses /redeem
-      │
-      ▼
-Premium Activated
-```
+### Media Tools
+- `/mp3` — Extract audio from any video
+- `/compress` — Compress video (low/mid quality)
+- Video watermark — `@TERA_NTM_BOT` on every video
+- Video metadata — duration, resolution, thumbnail
 
-Example:
+### User Experience
+- **Modern button-based UI** — no need to memorize commands
+- **3 languages** — English, Nepali, Hindi
+- Download history — `/history`
+- Auto-expired premium
+- Instant cached forwarding
 
-```text
-/redeem YOUR-GIFT-CODE
-```
+### Admin Panel
+- Dynamic admin system — add/remove admins from bot
+- `/ban` `/unban` — ban users
+- `/broadcast` — send message to all users
+- `/announce 30 <msg>` — scheduled broadcast
+- `/gen 7d 5` — generate 5 gift cards for 7 days
+- `/gclist` — list all gift cards
+- `/stats` — bot statistics
+- `/usage` — disk, RAM, CPU usage
+- `/logs` — recent error logs
+- `/backup` — export Redis data
 
-Gift cards can be used to provide Premium access without manually changing a user's account.
-
----
-
-# 🛡️ Anti-Spam System
-
-The bot includes an anti-spam/cooldown system to prevent excessive requests.
-
-### Free Users
-
-Default cooldown:
-
-```text
-60 seconds
-```
-
-### Premium Users
-
-Default cooldown:
-
-```text
-30 seconds
-```
-
-The cooldown values can be customized according to your deployment and requirements.
+### Safety
+- `/panic` — emergency stop all services
+- `/resume` — bring bot back online
+- `/maintenance` — toggle maintenance mode
+- Anti-spam cooldown (configurable)
+- Max files per request limit
+- Audit log — tracks all admin actions
+- Force channel/group join
 
 ---
 
-# 🗄️ Redis Database
+## Free vs Premium
 
-Redis is used for persistent bot data and user-related information.
-
-Depending on the configured version of the bot, Redis may be used for information such as:
-
-* User data
-* Premium users
-* Gift cards
-* Cooldown information
-* Usage data
-* Bot statistics
-* Temporary/cache data
-
-For production deployments, Redis should preferably run locally on the server or behind proper authentication/firewall rules.
+| Feature | Free | Premium |
+|---------|:----:|:-------:|
+| Downloads | 10/hour | Unlimited |
+| Files per link | 1 | All |
+| File size limit | 500MB | Unlimited |
+| Multi-file | ❌ | ✅ |
+| Folder download | ❌ | ✅ |
+| Custom thumbnail | ❌ | ✅ |
+| Priority speed | ❌ | ✅ |
+| Watermark | ✅ | ✅ |
 
 ---
 
-# 🛠️ Requirements
+## Commands
 
-Before installing the bot, make sure you have:
+### User
+| Command | Description |
+|---------|-------------|
+| `/start` | Open main menu |
+| `/help` | Show commands |
+| `/info` | Your profile & plan |
+| `/plan` | View plans |
+| `/redeem <code>` | Redeem gift card |
+| `/history` | Your download history |
+| `/dl 720p <link>` | Download in quality |
+| `/folder <link>` | Download folder (⭐) |
+| `/mp3` | Reply to video → audio |
+| `/compress` | Reply to video → compress |
+| `/setthumb` | Set thumbnail (⭐) |
+| `/lang ne` | Set language |
 
-* Python 3.9+
-* Telegram Bot Token
-* Telegram API ID
-* Telegram API Hash
-* Redis
-* A Telegram private storage chat/channel
-* Required TeraBox configuration/API credentials
-* Git *(recommended)*
+### Admin
+| Command | Description |
+|---------|-------------|
+| `/pre <id> <dur>` | Promote to premium |
+| `/de <id>` | Demote from premium |
+| `/premium_users` | List premium users |
+| `/gen <dur> [n]` | Generate gift cards |
+| `/gclist` | List all gift cards |
+| `/ban <id>` | Ban user |
+| `/unban <id>` | Unban user |
+| `/broadcast <msg>` | Broadcast to all |
+| `/announce <min> <msg>` | Scheduled broadcast |
+| `/stats` | Bot statistics |
+| `/usage` | Resource usage |
+| `/logs` | Error logs |
+
+### Owner Only
+| Command | Description |
+|---------|-------------|
+| `/panic` | 🚨 Emergency stop |
+| `/resume` | Bring bot online |
+| `/maintenance` | Toggle maintenance |
+| `/addadmin <id>` | Add admin |
+| `/removeadmin <id>` | Remove admin |
+| `/adminlist` | List all admins |
+| `/auditlog` | View admin action log |
+| `/backup` | Export Redis data |
+| `/update` | Pull & restart |
+| `/maxfiles <n>` | Set file limit |
+| `/setcooldown <s>` | Set cooldown |
+| `/setstorage <id>` | Update storage chat |
+| `/allowredeem <id>` | Reset GC redemption |
 
 ---
 
-# 📦 Installation
+## Installation
 
-## 1. Clone the Repository
+### Quick Start (Ubuntu VPS)
 
 ```bash
+# Install dependencies
+sudo apt update && sudo apt install python3 python3-pip python3-venv redis-server git ffmpeg -y
+
+# Clone
 git clone https://github.com/abdul97233/TeraBox-Downloader-Bot.git
 cd TeraBox-Downloader-Bot
-```
 
-Alternatively, download the repository as a ZIP file:
-
-```text
-https://github.com/abdul97233/TeraBox-Downloader-Bot/archive/refs/heads/main.zip
-```
-
----
-
-## 2. Create a Virtual Environment
-
-Using a virtual environment is recommended.
-
-### Linux / Ubuntu
-
-```bash
+# Virtual environment
 python3 -m venv venv
 source venv/bin/activate
-```
 
-### Windows
-
-```powershell
-python -m venv venv
-venv\Scripts\activate
-```
-
----
-
-## 3. Install Dependencies
-
-Upgrade pip:
-
-```bash
-python -m pip install --upgrade pip
-```
-
-Install the required packages:
-
-```bash
+# Install packages
 pip install -r requirements.txt
-```
+pip install opencv-python-headless
 
----
+# Configure
+cp config.example.py config.py
+nano config.py  # Add your credentials
 
-# ⚙️ Configuration
-
-The bot requires Telegram, Redis, storage, administrator, and TeraBox-related configuration.
-
-> ⚠️ **Never commit real API keys, bot tokens, passwords, cookies, or other credentials to GitHub.**
-
-Keep sensitive values outside the repository whenever possible.
-
----
-
-## 🔑 Telegram Configuration
-
-You need:
-
-### API ID and API Hash
-
-Create a Telegram application through Telegram's official developer platform and obtain:
-
-```text
-API_ID
-API_HASH
-```
-
-### Bot Token
-
-Create a bot using **@BotFather** and obtain:
-
-```text
-BOT_TOKEN
-```
-
-Example configuration:
-
-```python
-API_ID = 123456
-API_HASH = "YOUR_API_HASH"
-
-BOT_TOKEN = "YOUR_BOT_TOKEN"
-```
-
-Use your real credentials only in your local/server configuration.
-
----
-
-# 🗄️ Redis Configuration
-
-Example:
-
-```python
-HOST = "localhost"
-PORT = 6379
-PASSWORD = ""
-```
-
-For a local Redis installation:
-
-```text
-HOST = localhost
-PORT = 6379
-```
-
-If your Redis server requires authentication:
-
-```python
-PASSWORD = "YOUR_REDIS_PASSWORD"
-```
-
-### Production Recommendation
-
-Do not expose Redis directly to the public internet.
-
-Prefer:
-
-```text
-Python Bot
-    │
-    ▼
-127.0.0.1:6379
-    │
-    ▼
-Redis
-```
-
-instead of exposing:
-
-```text
-0.0.0.0:6379
-```
-
----
-
-# 📁 Telegram Private Storage
-
-The bot can use a private Telegram chat/channel for storing downloaded files.
-
-Configure:
-
-```python
-PRIVATE_CHAT_ID = -1001234567890
-```
-
-Replace the example value with the ID of your private Telegram storage chat/channel.
-
-Make sure the bot has the necessary permissions in the storage destination.
-
----
-
-# 🔐 TeraBox Configuration
-
-The TeraBox integration depends on the configuration used by the current version of the project.
-
-If your version uses an API-based configuration, configure the corresponding TeraBox API endpoint and authentication token in your server configuration.
-
-Example structure:
-
-```python
-TERABOX_API_BASE = "YOUR_TERABOX_API_ENDPOINT"
-TERABOX_API_TOKEN = "YOUR_TERABOX_API_TOKEN"
-```
-
-If your deployment uses another authentication method, configure it according to the corresponding implementation in `config.py`.
-
-> ⚠️ Do not publish TeraBox API tokens or authentication cookies in the repository.
-
----
-
-# 👑 Administrator Configuration
-
-Add authorized Telegram user IDs to the administrator configuration.
-
-Example:
-
-```python
-ADMINS = [
-    123456789,
-]
-```
-
-You can obtain your Telegram user ID using the bot's `/id` command or another trusted Telegram ID utility.
-
-Only trusted users should be added as administrators.
-
----
-
-# ▶️ Running the Bot
-
-After completing the configuration, start the bot with:
-
-```bash
+# Run
 python main.py
 ```
 
-On Linux systems:
+### Run in Background
 
 ```bash
-python3 main.py
+nohup python main.py > bot.log 2>&1 &
+disown
 ```
 
-If everything is configured correctly, the bot should start and connect to Telegram and the configured services.
+### Update
+
+```bash
+git pull origin main
+pkill -f "python main.py"
+nohup python main.py > bot.log 2>&1 &
+disown
+```
 
 ---
 
-# 🖥️ Running on Ubuntu VPS
+## Configuration
 
-For production use, it is recommended to run the bot as a background service instead of keeping an SSH terminal open.
+Create `config.py`:
 
-Basic setup:
+```python
+# Telegram
+API_ID = 123456
+API_HASH = "your_api_hash"
+BOT_TOKEN = "your_bot_token"
 
-```bash
-sudo apt update
-sudo apt install python3 python3-pip python3-venv redis-server git -y
+# Redis
+HOST = "localhost"
+PORT = 6379
+PASSWORD = ""
+
+# Bot
+PRIVATE_CHAT_ID = -1001234567890
+DOWNLOAD_DIR = "downloads"
+
+# Admin
+OWNER_ID = 123456789
+ADMINS = [123456789]
+
+# Force Join
+FORCE_CHANNELS = ["@your_channel"]
+FORCE_GROUPS = ["@your_group"]
+
+# TeraBox API
+TERABOX_API_BASE = "https://saiyanteraboxapi.saiyanprojects.com/"
+TERABOX_API_TOKEN = "your_token"
+TERABOX_API_TEMPLATE = f"{TERABOX_API_BASE}?authkey={TERABOX_API_TOKEN}&url={{url}}"
+
+# Fallback API
+TERABOX_FALLBACK_API_BASE = "https://saiyanteraboxapi2.saiyanprojects.com/"
+TERABOX_FALLBACK_API_TEMPLATE = f"{TERABOX_FALLBACK_API_BASE}?authkey={TERABOX_API_TOKEN}&url={{url}}"
+
+# Self-hosted Bot API (2GB uploads)
+TG_API_BASE = "https://your-bot-api-server.com"
+
+# GitHub (for /update)
+GITHUB_REPO = "https://github.com/abdul97233/TeraBox-Downloader-Bot"
 ```
-
-Clone the repository:
-
-```bash
-git clone https://github.com/abdul97233/TeraBox-Downloader-Bot.git
-cd TeraBox-Downloader-Bot
-```
-
-Create the virtual environment:
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-Configure the bot and start it:
-
-```bash
-python3 main.py
-```
-
-For a permanent production deployment, use a process manager such as **systemd**, **Supervisor**, or **Docker**.
 
 ---
 
-# 📂 Project Structure
+## Project Structure
 
-```text
+```
 TeraBox-Downloader-Bot/
-│
-├── FastTelethon.py       # Telegram file transfer utilities
-├── cansend.py            # Telegram sending/file handling utilities
-├── config.py             # Application configuration
-├── main.py               # Main bot entry point
-├── terabox.py            # TeraBox processing functionality
-├── tools.py              # Helper and utility functions
-├── requirements.txt      # Python dependencies
-├── README.md             # Project documentation
-└── LICENSE               # Project license
+├── main.py          # Bot entry point, handlers, UI
+├── terabox.py       # TeraBox API integration (async)
+├── tools.py         # Download, upload, watermark, utils
+├── config.py        # Your credentials (not pushed)
+├── cansend.py       # Rate limiter for progress bars
+├── requirements.txt # Python dependencies
+└── README.md        # This file
 ```
 
 ---
 
-# 🔄 How It Works
+## Tech Stack
 
-The general workflow is:
-
-```text
-                    ┌──────────────┐
-                    │ Telegram     │
-                    │ User         │
-                    └──────┬───────┘
-                           │
-                           │ TeraBox URL
-                           ▼
-                    ┌──────────────┐
-                    │ Telegram Bot │
-                    └──────┬───────┘
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │ URL          │
-                    │ Validation   │
-                    └──────┬───────┘
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │ TeraBox      │
-                    │ Processing   │
-                    └──────┬───────┘
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │ File / URL   │
-                    │ Processing   │
-                    └──────┬───────┘
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │ Telegram     │
-                    │ Storage      │
-                    └──────┬───────┘
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │ User         │
-                    └──────────────┘
-```
-
-Redis works alongside the bot for persistent user and Premium-related data.
+| Component | Technology |
+|-----------|-----------|
+| Language | Python 3.9+ |
+| Bot Framework | Telethon (MTProto) |
+| Bot API Upload | aiohttp + self-hosted Bot API |
+| Download | aiohttp (async, 2MB chunks) |
+| Database | Redis |
+| Video Processing | ffmpeg + OpenCV |
+| Watermark | ffmpeg drawtext |
+| Parallel | asyncio (non-blocking) |
 
 ---
 
-# 🔒 Security Recommendations
+## Troubleshooting
 
-Before deploying the bot publicly:
-
-### Never commit secrets
-
-Do not commit:
-
-```text
-BOT_TOKEN
-API_HASH
-REDIS_PASSWORD
-TERABOX_API_TOKEN
-TERABOX_COOKIE
-SESSION FILES
-.env
-```
-
-### Recommended `.gitignore`
-
-```gitignore
-.env
-.env.*
-venv/
-.venv/
-__pycache__/
-*.pyc
-*.session
-*.session-journal
-```
-
-### If a secret is accidentally published
-
-Immediately:
-
-1. Revoke/rotate the exposed credential.
-2. Replace it on the server.
-3. Remove it from the repository.
-4. Check Git history if the secret was committed previously.
-5. Do not assume deleting the latest commit removes the secret from Git history.
+| Problem | Solution |
+|---------|----------|
+| Bot not starting | Check `python --version`, reinstall deps |
+| Redis error | `sudo systemctl restart redis` |
+| Slow download | VPS location matters — use nearby server |
+| ffmpeg not found | `sudo apt install ffmpeg` |
+| Upload fails | Check `TG_API_BASE` server status |
+| Memory full | Run `/cleandownloads` or `/usage` |
 
 ---
 
-# 🐛 Troubleshooting
+## Security
 
-## Bot does not start
-
-Check:
-
-```bash
-python --version
-```
-
-and:
-
-```bash
-pip install -r requirements.txt
-```
-
-Then verify that your Telegram credentials are correct.
+- Never commit `config.py` to GitHub
+- Use `.gitignore`:
+  ```
+  config.py
+  *.session
+  *.session-journal
+  __pycache__/
+  venv/
+  bot.log
+  downloads/
+  ```
+- If credentials leak: rotate immediately
 
 ---
 
-## Redis connection error
+## Contributing
 
-Check whether Redis is running:
-
-```bash
-sudo systemctl status redis
-```
-
-Start it if necessary:
-
-```bash
-sudo systemctl start redis
-```
-
-Test Redis:
-
-```bash
-redis-cli ping
-```
-
-Expected:
-
-```text
-PONG
-```
+1. Fork the repo
+2. Create branch: `git checkout -b feature/my-feature`
+3. Commit: `git commit -m "Add: my feature"`
+4. Push: `git push origin feature/my-feature`
+5. Open a Pull Request
 
 ---
 
-## Bot does not respond
+## License
 
-Check:
-
-* Bot token
-* Telegram API ID
-* Telegram API Hash
-* Internet connection
-* Redis connection
-* Python process
-* Server logs
+[GPL-3.0](LICENSE) — Free to use, modify, and distribute.
 
 ---
 
-## TeraBox link fails
+<div align="center">
 
-Check:
+**Made with ❤️ by [Abdul](https://t.me/abdul97233)**
 
-* Whether the URL is supported
-* Whether the TeraBox service/API is available
-* TeraBox API configuration
-* Authentication configuration
-* Network connectivity
-* API response/logs
+⭐ Star this repo if you found it useful!
 
----
-
-## Telegram upload fails
-
-Check:
-
-* Bot permissions
-* Telegram limits
-* Available disk space
-* Network speed
-* Private storage chat ID
-* Telegram API errors
-
----
-
-# 📊 Recommended Production Monitoring
-
-For a production deployment, monitor:
-
-```text
-CPU usage
-RAM usage
-Disk usage
-Network usage
-Redis status
-Bot status
-Active downloads
-Failed downloads
-Total users
-Premium users
-Daily requests
-API failures
-Telegram errors
-```
-
-This makes it easier to detect problems before users report them.
-
----
-
-# 🤝 Contributing
-
-Contributions are welcome.
-
-To contribute:
-
-### 1. Fork the repository
-
-```bash
-git clone https://github.com/abdul97233/TeraBox-Downloader-Bot.git
-```
-
-### 2. Create a branch
-
-```bash
-git checkout -b feature/my-feature
-```
-
-### 3. Make your changes
-
-Test your changes locally before submitting them.
-
-### 4. Commit
-
-```bash
-git add .
-git commit -m "Add: my feature"
-```
-
-### 5. Push
-
-```bash
-git push origin feature/my-feature
-```
-
-### 6. Open a Pull Request
-
-Please provide a clear explanation of:
-
-* What was changed
-* Why it was changed
-* How it was tested
-* Any configuration changes required
-
----
-
-# 📜 Disclaimer
-
-This project is provided for **educational and personal use**.
-
-Users are responsible for ensuring that their use of this software complies with:
-
-* Applicable laws
-* Telegram's terms and policies
-* TeraBox's terms and policies
-* Copyright and intellectual-property laws
-* Any other applicable third-party terms
-
-The project author and contributors are not responsible for misuse of the software, violations of third-party terms, copyright infringement, or any damages resulting from its use.
-
-Use this project responsibly and only with content you are authorized to access or download.
-
----
-
-# 📄 License
-
-This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
-
-See the [`LICENSE`](LICENSE) file for the complete license text.
-
----
-
-# 🌐 Community & Support
-
-<p align="center">
-
-<a href="https://t.me/tera_NTM_bot">
-  <img src="https://img.shields.io/badge/Main%20Bot-TeraBox%20Downloader-blue?style=for-the-badge&logo=telegram" alt="Main Bot">
-</a>
-
-<a href="https://t.me/tera2_NTM_bot">
-  <img src="https://img.shields.io/badge/Backup%20Bot-TeraBox%20Downloader-blue?style=for-the-badge&logo=telegram" alt="Backup Bot">
-</a>
-
-<br><br>
-
-<a href="https://t.me/ntmchat">
-  <img src="https://img.shields.io/badge/Support%20Group-NTM%20Chat-blue?style=for-the-badge&logo=telegram" alt="Support Group">
-</a>
-
-<a href="https://t.me/ntmpro">
-  <img src="https://img.shields.io/badge/Telegram-Channel-blue?style=for-the-badge&logo=telegram" alt="Telegram Channel">
-</a>
-
-</p>
-
----
-
-<p align="center">
-  ⭐ If this project helped you, consider giving the repository a star!
-</p>
-
-<p align="center">
-  Made with ❤️ using Python and Telegram
-</p>
+</div>
