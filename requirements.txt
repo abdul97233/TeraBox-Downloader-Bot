@@ -10,4 +10,4 @@ requests
 redis
 FastTelethonhelper
 humanreadable
-pillow
+opencv-python-headless
