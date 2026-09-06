@@ -1925,10 +1925,14 @@ async def handle_message(m: Message):
             await hm.edit(f"Download failed for `{data['file_name']}`")
             continue
 
-        # ---- Add watermark ----
-        wm_result = await asyncio.get_event_loop().run_in_executor(
-            None, add_watermark, download
-        )
+        # ---- Add watermark (skip if file too small or invalid) ----
+        file_size = os.path.getsize(download)
+        if file_size > 10240:  # Only watermark files > 10KB
+            wm_result = await asyncio.get_event_loop().run_in_executor(
+                None, add_watermark, download
+            )
+        else:
+            wm_result = False
 
         # ---- Compress if quality specified ----
         dl_quality = getattr(m, '_dl_quality', None)
