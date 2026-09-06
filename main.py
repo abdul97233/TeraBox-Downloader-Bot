@@ -641,7 +641,9 @@ async def cb_howto(e):
 mp4, mkv, webm, mov, avi, flv, wmv, m4v, mpg, mpeg, 3gp, ts, and more...
 
 **Commands:**
-`/dl <link>` — Download video
+`/dl <link>` — Download original
+`/dl 720p <link>` — Download + compress 720p
+`/dl 480p <link>` — Download + compress 480p
 `/folder <link>` — Download entire folder
 `/mp3` — Reply to video → extract audio
 `/compress` — Reply to video → compress
@@ -774,7 +776,9 @@ async def cb_tools(e):
 ┗━━━━━━━━━━━━━━━━━━━━━⍟
 
 **📥 Download Tools:**
-`/dl <link>` — Download video
+`/dl <link>` — Download original
+`/dl 720p <link>` — Download + compress 720p
+`/dl 480p <link>` — Download + compress 480p
 `/folder <link>` — Entire folder (⭐)
 
 **🎵 Media Tools:**
@@ -1321,6 +1325,12 @@ async def get_message(m: Message):
     asyncio.create_task(handle_message(m))
 
 
+DL_QUALITY_MAP = {
+    "144p": (144, 35), "240p": (240, 31), "360p": (360, 28),
+    "480p": (480, 26), "720p": (720, 23), "1080p": (1080, 20),
+}
+
+
 async def handle_message(m: Message):
 
     url = get_urls_from_string(m.text)
@@ -1534,6 +1544,28 @@ async def handle_message(m: Message):
         wm_result = await asyncio.get_event_loop().run_in_executor(
             None, add_watermark, download
         )
+
+        # ---- Compress if quality specified ----
+        dl_quality = getattr(m, '_dl_quality', None)
+        if dl_quality and dl_quality in DL_QUALITY_MAP:
+            height, crf = DL_QUALITY_MAP[dl_quality]
+            compressed_path = download + f".{dl_quality}.mp4"
+            await hm.edit(f"Compressing to {dl_quality}...")
+            try:
+                cmd = [
+                    "ffmpeg", "-y", "-i", download,
+                    "-vf", f"scale=-2:{height}",
+                    "-c:v", "libx264", "-crf", str(crf),
+                    "-preset", "fast", "-c:a", "aac", "-b:a", "128k",
+                    compressed_path,
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                if result.returncode == 0 and os.path.isfile(compressed_path):
+                    os.replace(compressed_path, download)
+            except Exception as e:
+                print(f"Compression failed: {e}")
+                if os.path.isfile(compressed_path):
+                    os.unlink(compressed_path)
 
         caption = f"""
 ┏━━━━━━━━━━⍟
@@ -1913,7 +1945,9 @@ async def admin_commands(m: UpdateNewMessage):
 **── Media Tools ──**
 /mp3 — Reply to video → extract audio
 /compress `[low|mid]` — Reply to video → compress
-/dl `<link>` — Download video
+/dl `<link>` — Download original quality
+/dl `720p` `<link>` — Download + compress 720p
+/dl `480p` `<link>` — Download + compress 480p
 /folder `<link>` — Download entire folder (premium)
 /setthumb — Reply to image → set thumbnail (premium)
 /removethumb — Remove custom thumbnail
@@ -2131,20 +2165,37 @@ async def set_language(m: UpdateNewMessage):
     await m.reply(t(m.sender_id, "lang_set", lang=LANGUAGES[lang_code]))
 
 
-# ==================== DOWNLOAD — /dl <link> ====================
+# ==================== DOWNLOAD — /dl <quality> <link> ====================
 
 @bot.on(
     events.NewMessage(
-        pattern=r"/dl(?:\s+)?(https?://\S+)",
+        pattern=r"/dl(?:\s+(\w+))?\s+(https?://\S+)",
         incoming=True,
         outgoing=False,
     )
 )
 async def dl_command(m: UpdateNewMessage):
-    url = m.pattern_match.group(1)
+    quality = m.pattern_match.group(1)
+    url = m.pattern_match.group(2)
+
     if not url:
-        return await m.reply("Usage: `/dl <terabox_link>`")
+        return await m.reply(
+            "Usage:\n"
+            "- `/dl <link>` — Original quality\n"
+            "- `/dl 720p <link>` — Compress to 720p\n"
+            "- `/dl 480p <link>` — Compress to 480p\n\n"
+            "Qualities: 144p, 240p, 360p, 480p, 720p, 1080p"
+        )
+
+    if quality:
+        quality = quality.lower()
+        if quality not in DL_QUALITY_MAP:
+            q_list = ", ".join(DL_QUALITY_MAP.keys())
+            return await m.reply(f"Invalid quality: `{quality}`\nValid: {q_list}")
+
+    # Set text to URL and pass quality info
     m.text = url
+    m._dl_quality = quality if quality else None
     await handle_message(m)
 
 
