@@ -17,15 +17,10 @@ VIDEO_EXTENSIONS = (".mp4", ".mkv", ".webm", ".mov", ".avi", ".flv", ".wmv", ".m
 WATERMARK_TEXT = "@TERA_NTM_BOT"
 FFMPEG_PATH = shutil.which("ffmpeg")
 
-# Try to find a valid font on the system
-FONT_PATH = None
-for f in ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-          "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-          "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
-          "/usr/share/fonts/TTF/DejaVuSans.ttf"]:
-    if os.path.isfile(f):
-        FONT_PATH = f
-        break
+# Font path - installed via setup.sh (fonts-dejavu-core)
+FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+if not os.path.isfile(FONT_PATH):
+    FONT_PATH = None
 
 
 def add_watermark(input_path: str) -> str | bool:
