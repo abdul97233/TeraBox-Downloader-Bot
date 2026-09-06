@@ -1739,26 +1739,49 @@ async def auto_cleanup_downloads():
     )
 )
 async def update_bot(m: UpdateNewMessage):
-    msg = await m.reply("Pulling latest code from GitHub...")
+    msg = await m.reply("Updating bot...")
     try:
+        cwd = os.path.dirname(os.path.abspath(__file__))
+
+        # Stash local changes (including config.py) before pulling
+        await msg.edit("Stashing local changes...")
+        subprocess.run(
+            ["git", "stash", "push", "-m", "auto-stash before update", "--", "config.py", "README.md"],
+            capture_output=True, text=True, cwd=cwd, timeout=10,
+        )
+
+        # Pull latest
+        await msg.edit("Pulling latest code...")
         result = subprocess.run(
             ["git", "pull", "origin", "main"],
-            capture_output=True,
-            text=True,
-            cwd=os.path.dirname(os.path.abspath(__file__)),
-            timeout=30,
+            capture_output=True, text=True, cwd=cwd, timeout=30,
         )
         output = result.stdout.strip()
         errors = result.stderr.strip()
 
         if result.returncode == 0:
             if "Already up to date" in output:
+                # Restore stashed config
+                subprocess.run(
+                    ["git", "stash", "pop"],
+                    capture_output=True, text=True, cwd=cwd, timeout=10,
+                )
                 await msg.edit("Already up to date. No changes.")
             else:
-                await msg.edit(f"Pulled successfully.\n\n`{output}`\n\nRestarting...")
+                # Restore stashed config
+                subprocess.run(
+                    ["git", "stash", "pop"],
+                    capture_output=True, text=True, cwd=cwd, timeout=10,
+                )
+                await msg.edit(f"Updated successfully!\n\n`{output}`\n\nRestarting...")
                 await asyncio.sleep(2)
                 os.execl(sys.executable, sys.executable, *sys.argv)
         else:
+            # Try to restore stash even on error
+            subprocess.run(
+                ["git", "stash", "pop"],
+                capture_output=True, text=True, cwd=cwd, timeout=10,
+            )
             await msg.edit(f"Git pull failed:\n`{errors or output}`")
     except Exception as e:
         await msg.edit(f"Update failed: `{e}`")
