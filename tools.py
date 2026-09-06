@@ -16,11 +16,39 @@ VIDEO_EXTENSIONS = (".mp4", ".mkv", ".webm", ".mov", ".avi", ".flv", ".wmv", ".m
 
 WATERMARK_TEXT = "@TERA_NTM_BOT"
 FFMPEG_PATH = shutil.which("ffmpeg")
+BUNDLE_DIR = os.path.dirname(os.path.abspath(__file__))
+FONT_PATH = os.path.join(BUNDLE_DIR, "font.ttf")
 
-# Font path - installed via setup.sh (fonts-dejavu-core)
-FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-if not os.path.isfile(FONT_PATH):
+
+def _ensure_font():
+    """Download font if not present."""
+    if os.path.isfile(FONT_PATH):
+        return
+    font_urls = [
+        "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf",
+        "https://github.com/dejavu-fonts/dejavu-fonts/raw/main/ttf/DejaVuSans.ttf",
+    ]
+    for url in font_urls:
+        try:
+            import urllib.request
+            urllib.request.urlretrieve(url, FONT_PATH)
+            if os.path.isfile(FONT_PATH) and os.path.getsize(FONT_PATH) > 1000:
+                print(f"Font downloaded: {FONT_PATH}")
+                return
+        except Exception as e:
+            print(f"Font download failed from {url}: {e}")
+    # Fallback: try system fonts
+    for f in ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+              "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+              "/usr/share/fonts/TTF/DejaVuSans.ttf"]:
+        if os.path.isfile(f):
+            global FONT_PATH
+            FONT_PATH = f
+            return
     FONT_PATH = None
+
+
+_ensure_font()
 
 
 def add_watermark(input_path: str) -> str | bool:
@@ -31,7 +59,6 @@ def add_watermark(input_path: str) -> str | bool:
 
     output_path = input_path + ".wm.mp4"
     try:
-        # Build drawtext filter with font path if available
         if FONT_PATH:
             drawtext = (
                 f"drawtext=text='{WATERMARK_TEXT}':"
@@ -51,8 +78,7 @@ def add_watermark(input_path: str) -> str | bool:
                 "borderw=2:"
                 "bordercolor=black@0.5:"
                 "x=10:"
-                "y=10:"
-                "font=Sans"
+                "y=10"
             )
 
         cmd = [
