@@ -442,10 +442,14 @@ async def _send_gc_list(m, items, page, total_pages, total):
     await m.reply(text, parse_mode="markdown", buttons=buttons)
 
 
-@bot.on(events.CallbackQuery(data=r"gcpage_(\d+)_(\d+)"))
+@bot.on(events.CallbackQuery(func=lambda e: e.data and e.data.startswith(b"gcpage_")))
 async def gc_page_cb(e):
-    page = int(e.pattern_match.group(1))
-    total = int(e.pattern_match.group(2))
+    try:
+        parts = e.data.decode().split("_")
+        page = int(parts[1])
+        total = int(parts[2])
+    except Exception:
+        return await e.answer("Invalid callback data.", alert=True)
 
     unused = db.hgetall(GC_REDIS_KEY)
     used = db.hgetall(GC_USED_KEY)
@@ -463,6 +467,7 @@ async def gc_page_cb(e):
         items.append({"code": code, "status": "used", "label": label, "user": uid})
 
     total_pages = max(1, (len(items) + GC_LIST_PER_PAGE - 1) // GC_LIST_PER_PAGE)
+    page = min(page, total_pages)
     start = (page - 1) * GC_LIST_PER_PAGE
     end = start + GC_LIST_PER_PAGE
     page_items = items[start:end]
@@ -589,9 +594,13 @@ async def track_gc(m: UpdateNewMessage):
     await m.reply(text, parse_mode="markdown", buttons=buttons)
 
 
-@bot.on(events.CallbackQuery(data=r"gctrack_(\w+)"))
+@bot.on(events.CallbackQuery(func=lambda e: e.data and e.data.startswith(b"gctrack_")))
 async def gctrack_cb(e):
-    filter_type = e.pattern_match.group(1)
+    try:
+        filter_type = e.data.decode().split("_", 1)[1]
+    except Exception:
+        return await e.answer("Invalid callback data.", alert=True)
+
     used = db.hgetall(GC_USED_KEY)
     now = int(time.time())
     results = []
