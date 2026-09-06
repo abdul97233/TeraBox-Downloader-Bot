@@ -694,7 +694,7 @@ async def redeem_gc(m: UpdateNewMessage):
     # Check if user already redeemed AND still has active premium
     if db.get(f"gc_redeemed_{user_id}") and is_premium_user(user_id):
         return await m.reply(
-            "❌ You have already redeemed a gift card and your premium is still active.\n"
+            "You have already redeemed a gift card and your premium is still active.\n"
             "Each user can only redeem **1 gift card** while premium is active.\n"
             "Wait for expiry or contact admin."
         )
@@ -702,21 +702,30 @@ async def redeem_gc(m: UpdateNewMessage):
     days_str = db.hget(GC_REDIS_KEY, code)
 
     if not days_str:
-        return await m.reply("❌ Invalid or already used gift card.")
+        return await m.reply("Invalid or already used gift card.")
 
     days = int(days_str)
+    # Get tag before deleting
+    tag = db.hget(GC_TAGS_KEY, code) or ""
     db.hdel(GC_REDIS_KEY, code)
+    db.hdel(GC_TAGS_KEY, code)
     # Track who used this code
     db.hset(GC_USED_KEY, code, f"{user_id}:{int(time.time())}:{days}")
     # Mark user as having redeemed a gift card (permanent record)
     db.set(f"gc_redeemed_{user_id}", "1")
 
+    # Apply tag if gift card had one
+    if tag:
+        set_custom_tag(user_id, tag)
+
+    tag_info = f"\nTag: **{tag}**" if tag else ""
+
     if days == 0:
         grant_premium(user_id, 99999)
         await m.reply(
-            "Gift card redeemed!\n\n"
-            "**Premium: Unlimited**\n"
-            "Duration: Permanent (never expires)",
+            f"Gift card redeemed!\n\n"
+            f"**Premium: Unlimited**\n"
+            f"Duration: Permanent (never expires){tag_info}",
             parse_mode="markdown",
         )
     else:
@@ -728,7 +737,7 @@ async def redeem_gc(m: UpdateNewMessage):
         await m.reply(
             f"Gift card redeemed!\n\n"
             f"**Premium: {days} day(s)**\n"
-            f"Expires: `{expiry_str}`",
+            f"Expires: `{expiry_str}`{tag_info}",
             parse_mode="markdown",
         )
 
@@ -736,10 +745,11 @@ async def redeem_gc(m: UpdateNewMessage):
     user = await bot.get_entity(m.sender_id)
     name = user.first_name
     username = user.username if user.username else "-"
+    tag_msg = f"\nTag: {tag}" if tag else ""
     for admin_id in get_all_admins():
         await bot.send_message(
             admin_id,
-            f"🎁 Gift Card Redeemed!\nUser: {name} (@{username})\nID: `{m.sender_id}`\nCode: `{code}`\nDuration: {days}d"
+            f"Gift Card Redeemed!\nUser: {name} (@{username})\nID: `{m.sender_id}`\nCode: `{code}`\nDuration: {days}d{tag_msg}"
         )
 
 
