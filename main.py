@@ -310,10 +310,11 @@ async def ping_pong(m: UpdateNewMessage):
     await message.edit(f"🖥️ Connection Status\nCommand: `/ping`\nResponse Time: {latency_str} seconds")
 
 # ==================== /gen — GENERATE GIFT CARDS ====================
-# Usage: /gen <duration> [count]
-# Example: /gen 7d 5 → generates 5 gift codes for 7 days premium
+# Usage: /gen <duration> [count] [tag]
+# Example: /gen 7d 5 VIP → generates 5 gift codes for 7 days with VIP tag
 
 GC_REDIS_KEY = "gift_cards"  # HASH: code → duration_days
+GC_TAGS_KEY = "gc_tags"      # HASH: code → custom_tag
 
 DURATION_MAP_GC = {
     "1d": 1, "2d": 2, "3d": 3, "5d": 5, "7d": 7,
@@ -323,7 +324,7 @@ DURATION_MAP_GC = {
 
 @bot.on(
     events.NewMessage(
-        pattern=r"/gen\s+(\S+)(?:\s+(\d+))?",
+        pattern=r"/gen\s+(\S+)(?:\s+(\d+))?(?:\s+(.+))?",
         incoming=True,
         outgoing=False,
         func=lambda m: is_admin(m.sender_id),
@@ -332,6 +333,7 @@ DURATION_MAP_GC = {
 async def generate_gc(m: UpdateNewMessage):
     duration_str = m.pattern_match.group(1).lower()
     count = int(m.pattern_match.group(2) or 1)
+    tag = (m.pattern_match.group(3) or "").strip()
 
     if count > 50:
         return await m.reply("Max 50 codes at once.")
@@ -341,8 +343,11 @@ async def generate_gc(m: UpdateNewMessage):
         return await m.reply(
             f"Invalid duration: `{duration_str}`\n\n"
             f"Valid: `{valid}`\n\n"
-            f"**Usage:** `/gen <duration> [count]`\n"
-            f"Example: `/gen 7d 5`"
+            f"**Usage:** `/gen <duration> [count] [tag]`\n"
+            f"Examples:\n"
+            f"- `/gen 7d 5` — 5 cards, 7 days\n"
+            f"- `/gen 7d 5 VIP` — 5 cards, 7 days, VIP tag\n"
+            f"- `/gen unlimited 1 PREMIUM` — 1 card, permanent, PREMIUM tag"
         )
 
     days = DURATION_MAP_GC[duration_str]
@@ -350,17 +355,26 @@ async def generate_gc(m: UpdateNewMessage):
     for _ in range(count):
         code = f"NTM-{str(uuid4())[:8].upper()}"
         db.hset(GC_REDIS_KEY, code, days)
+        if tag:
+            db.hset(GC_TAGS_KEY, code, tag)
         codes.append(code)
 
     duration_label = f"{days} day(s)" if days > 0 else "Permanent (Unlimited)"
 
     # Build redeem codes with /redeem prefix for easy copy
-    redeem_lines = "\n".join([f"`/redeem {c}`" for c in codes])
+    redeem_lines = []
+    for c in codes:
+        if tag:
+            redeem_lines.append(f"`/redeem {c}` (Tag: {tag})")
+        else:
+            redeem_lines.append(f"`/redeem {c}`")
+
+    tag_info = f"\nTag: **{tag}**" if tag else ""
 
     await m.reply(
         f"**{count} Gift Card(s) Generated**\n\n"
-        f"Duration: **{duration_label}**\n\n"
-        f"**Send these to users:**\n{redeem_lines}",
+        f"Duration: **{duration_label}**{tag_info}\n\n"
+        f"**Send these to users:**\n" + "\n".join(redeem_lines),
         parse_mode="markdown",
     )
 
@@ -453,18 +467,21 @@ async def gc_page_cb(e):
 
     unused = db.hgetall(GC_REDIS_KEY)
     used = db.hgetall(GC_USED_KEY)
+    tags = db.hgetall(GC_TAGS_KEY)
 
     items = []
     for code, days in unused.items():
         days = int(days)
         label = "Permanent" if days == 0 else f"{days}d"
-        items.append({"code": code, "status": "available", "label": label})
+        tag = tags.get(code, "")
+        items.append({"code": code, "status": "available", "label": label, "tag": tag})
     for code, val in used.items():
         parts = val.split(":")
         uid = parts[0] if len(parts) > 0 else "?"
         days = int(parts[2]) if len(parts) > 2 else 0
         label = "Permanent" if days == 0 else f"{days}d"
-        items.append({"code": code, "status": "used", "label": label, "user": uid})
+        tag = tags.get(code, "")
+        items.append({"code": code, "status": "used", "label": label, "user": uid, "tag": tag})
 
     total_pages = max(1, (len(items) + GC_LIST_PER_PAGE - 1) // GC_LIST_PER_PAGE)
     page = min(page, total_pages)
@@ -477,11 +494,12 @@ async def gc_page_cb(e):
 
     lines = []
     for i, item in enumerate(page_items, start=start + 1):
+        tag_str = f" [{item.get('tag', '')}]" if item.get('tag') else ""
         if item["status"] == "available":
-            lines.append(f"{i}. `/redeem {item['code']}` — {item['label']} [Available]")
+            lines.append(f"{i}. `/redeem {item['code']}` — {item['label']}{tag_str} [Available]")
         else:
             user = item.get("user", "?")
-            lines.append(f"{i}. `{item['code']}` — {item['label']} [Used by `{user}`]")
+            lines.append(f"{i}. `{item['code']}` — {item['label']}{tag_str} [Used by `{user}`]")
 
     text = (
         f"**Gift Cards** ({len(items)} total)\n"
@@ -565,6 +583,9 @@ async def track_gc(m: UpdateNewMessage):
             continue
         elif filter_type and filter_type.isdigit():
             if uid != filter_type:
+                continue
+        elif filter_type:
+            if code.upper() != filter_type.upper():
                 continue
 
         results.append(entry)
