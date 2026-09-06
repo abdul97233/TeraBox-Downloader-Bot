@@ -1846,7 +1846,7 @@ async def handle_message(m: Message):
 
     user_first_name = m.sender.first_name
     user_username = m.sender.username
-    cansend = CanSend()
+    cansend = CanSend(interval=2)
 
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
@@ -1876,7 +1876,9 @@ async def handle_message(m: Message):
         start_time = time.time()
         label = f"({idx}/{total}) " if total > 1 else ""
 
-        async def progress_bar(current_downloaded, total_downloaded, state="Sending"):
+        cansend = CanSend(interval=2)
+
+        async def progress_bar(current_downloaded, total_downloaded, state="Downloading"):
 
             if not cansend.can_send():
                 return
@@ -1890,7 +1892,7 @@ async def handle_message(m: Message):
             spaces = "░" * (bar_length - filled)
 
             elapsed_time = time.time() - start_time
-            if elapsed_time < 0.5:
+            if elapsed_time < 1:
                 return
 
             speed = current_downloaded / elapsed_time if elapsed_time > 0 else 0
@@ -1904,10 +1906,13 @@ async def handle_message(m: Message):
             eta = f"ETA: {convert_seconds(remaining)}"
             sz = f"Size: {get_formatted_size(current_downloaded)} / {get_formatted_size(total_downloaded)}"
 
-            await hm.edit(
-                f"{head}\n{bar}\n{spd} | {eta}\n{sz}",
-                parse_mode="markdown",
-            )
+            try:
+                await hm.edit(
+                    f"{head}\n{bar}\n{spd} | {eta}\n{sz}",
+                    parse_mode="markdown",
+                )
+            except Exception:
+                pass
 
         uuid = str(uuid4())
         thumbnail = download_image_to_bytesio(data["thumb"], "thumbnail.png")
@@ -2661,7 +2666,7 @@ async def folder_download(m: UpdateNewMessage):
     is_premium = is_premium_user(m.sender_id)
     user_first_name = m.sender.first_name
     user_username = m.sender.username
-    cansend = CanSend()
+    cansend = CanSend(interval=2)
 
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 

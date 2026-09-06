@@ -2,14 +2,13 @@ import time
 
 
 class CanSend:
-    def can_send(self):
-        if not hasattr(self, "last_send_time"):
-            self.last_send_time = time.time() - 20
-        current_time = time.time()
-        elapsed_time = current_time - self.last_send_time
+    def __init__(self, interval=2):
+        self.interval = interval
+        self.last_send_time = time.time() - 10
 
-        if elapsed_time >= 5:
+    def can_send(self):
+        current_time = time.time()
+        if current_time - self.last_send_time >= self.interval:
             self.last_send_time = current_time
             return True
-        else:
-            return False
+        return False
