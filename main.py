@@ -1209,11 +1209,14 @@ Choose an admin action 👇
             Button.inline("🎁 Gift Cards", data="admin_gc"),
         ],
         [
+            Button.inline("🏷 Tags", data="admin_tags"),
             Button.inline("🚫 Ban Users", data="admin_ban"),
-            Button.inline("📝 Logs", data="admin_logs"),
         ],
         [
+            Button.inline("📝 Logs", data="admin_logs"),
             Button.inline("📢 Broadcast", data="admin_broadcast"),
+        ],
+        [
             Button.inline("💾 Backup", data="admin_backup"),
         ],
         [Button.inline("◀️ Back", data="menu_main")],
@@ -1331,10 +1334,35 @@ async def cb_admin_gc(e):
 
 **Commands:**
 `/gen <duration> [count]` — Generate cards
-`/gclist` — List all cards
+`/gclist` — List all cards (with buttons)
+`/gctrack` — Track who used cards
+`/gctrack 24h` — Cards used last 24h
+`/gctrack <user_id>` — Cards used by user
 `/gcdel <code>` — Delete a card
+`/allowredeem <user_id>` — Reset user redemption
 
 **Duration:** 1d, 2d, 3d, 5d, 7d, 1w, 2w, 1m, unlimited
+"""
+    buttons = [[Button.inline("◀️ Back", data="menu_admin")]]
+    await e.edit(text, parse_mode="markdown", buttons=buttons)
+
+
+@bot.on(events.CallbackQuery(data=b"admin_tags"))
+async def cb_admin_tags(e):
+    if not is_admin(e.sender_id):
+        return await e.answer("Access denied!", alert=True)
+
+    text = """
+┏━━━━━━━━━━━━━━━━━⍟
+┃  🏷 𝐓𝐚𝐠 𝐌𝐚𝐧𝐚𝐠𝐞𝐦𝐞𝐧𝐭
+┗━━━━━━━━━━━━━━━━━━━━━⍟
+
+**Commands:**
+`/settag <user_id> <tag>` — Set custom tag
+`/tag` — View your own tag
+
+**Auto Tags:**
+Owner and Admins get auto-tagged if no custom tag set.
 """
     buttons = [[Button.inline("◀️ Back", data="menu_admin")]]
     await e.edit(text, parse_mode="markdown", buttons=buttons)
