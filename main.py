@@ -218,10 +218,14 @@ async def user_info(m: UpdateNewMessage):
     else:
         plan = "🆓 Free"
 
+    tag = get_custom_tag(user_id)
+    tag_line = f"**Tag:** {tag}\n" if tag else ""
+
     info_text = (
         f"**Name:** {name}\n"
         f"**Username:** @{username}\n"
         f"**User ID:** `{user_id}`\n"
+        f"{tag_line}"
         f"**Plan:** {plan}"
     )
     await m.reply(info_text, parse_mode="markdown", link_preview=False)
@@ -1792,6 +1796,8 @@ async def handle_message(m: Message):
             valid_msgs = [msg for msg in cached_msgs if msg and msg.media]
             if valid_msgs:
                 data = files_to_process[0]
+                user_tag = get_custom_tag(m.sender_id)
+                tag_str = f" [{user_tag}]" if user_tag else ""
                 cached_caption = f"""
 ┏━━━━━━━━━━⍟
 ┃ 𝐍𝐓𝐌 𝐓𝐞𝐫𝐚 𝐁𝐨𝐱 𝐃𝐨𝐰𝐧𝐥𝐨𝐚𝐝𝐞𝐫 𝐁𝐨𝐭
@@ -1799,7 +1805,7 @@ async def handle_message(m: Message):
 ╔══════════⍟
 ╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{data['file_name']}`
 ╟➣𝙎𝙞𝙯𝙚: **{data['size']}**
-╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(m.sender.first_name)}
+╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(m.sender.first_name)}{tag_str}
 ╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(m.sender.username or '-')}
 ╚═════════════════⍟
          @NTMpro
@@ -1934,6 +1940,9 @@ async def handle_message(m: Message):
                 if os.path.isfile(compressed_path):
                     os.unlink(compressed_path)
 
+        user_tag = get_custom_tag(m.sender_id)
+        tag_str = f" [{user_tag}]" if user_tag else ""
+
         caption = f"""
 ┏━━━━━━━━━━⍟
 ┃ 𝐍𝐓𝐌 𝐓𝐞𝐫𝐚 𝐁𝐨𝐱 𝐃𝐨𝐰𝐧𝐥𝐨𝐚𝐝𝐞𝐫 𝐁𝐨𝐭
@@ -1942,7 +1951,7 @@ async def handle_message(m: Message):
 ╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{data['file_name']}`
 ╟➣𝙎𝙞𝙯𝙚: **{escape_markdown(data['size'])}** 
 ╟➣𝗗𝗶𝗿𝗲𝗰𝘁 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱 𝗟𝗶𝗻𝗸 : [Click here]({data['direct_link']})
-╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}
+╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}{tag_str}
 ╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(user_username or '-')}
 ╟➣𝐓𝐨𝐭𝐚𝐥 𝐓𝐢𝐦𝐞 𝐓𝐚𝐤𝐞𝐧: {total_time} sec
 ╚═════════════════⍟
