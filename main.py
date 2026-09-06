@@ -2165,6 +2165,38 @@ async def update_bot(m: UpdateNewMessage):
         await msg.edit(f"Update error: `{e}`")
 
 
+# ==================== /restart — NORMAL RESTART ====================
+
+@bot.on(
+    events.NewMessage(
+        pattern="/restart",
+        incoming=True,
+        outgoing=False,
+        from_users=[OWNER_ID],
+    )
+)
+async def restart_bot(m: UpdateNewMessage):
+    msg = await m.reply("Restarting bot...")
+    await asyncio.sleep(2)
+    os.execl(sys.executable, sys.executable, *sys.argv)
+
+
+# ==================== /force — FORCE RESTART (KILL + START) ====================
+
+@bot.on(
+    events.NewMessage(
+        pattern="/force",
+        incoming=True,
+        outgoing=False,
+        from_users=[OWNER_ID],
+    )
+)
+async def force_restart(m: UpdateNewMessage):
+    msg = await m.reply("Force restarting bot...")
+    await asyncio.sleep(2)
+    os.execl(sys.executable, sys.executable, *sys.argv)
+
+
 # ==================== OWNER ONLY: /setstorage ====================
 
 @bot.on(
