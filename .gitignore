@@ -1,5 +1,4 @@
 config.py
-config.example.py
 *.session
 *.session-journal
 __pycache__/
