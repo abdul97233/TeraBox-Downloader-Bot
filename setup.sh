@@ -7,7 +7,7 @@ echo "=== TeraBox Bot Setup ==="
 # Install system dependencies
 echo "Installing system dependencies..."
 apt update -qq
-apt install -y ffmpeg fonts-dejavu-core python3-pip python3-venv -qq
+apt install -y ffmpeg python3-pip python3-venv -qq
 
 # Create virtual environment
 echo "Setting up Python environment..."
