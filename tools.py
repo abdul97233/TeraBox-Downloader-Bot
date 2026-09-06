@@ -56,7 +56,7 @@ _ensure_font()
 def add_watermark(input_path: str) -> str | bool:
     """Add watermark to video using ffmpeg. Returns watermarked file path or False."""
     if not FFMPEG_PATH:
-        log.info("ffmpeg not found, skipping watermark", flush=True)
+        log.info("ffmpeg not found, skipping watermark")
         return False
 
     output_path = input_path + ".wm.mp4"

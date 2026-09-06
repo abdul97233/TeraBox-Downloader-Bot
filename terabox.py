@@ -107,22 +107,22 @@ async def retry_request(method, url, attempts=3, delay=2, **kwargs):
 async def _fetch_files_from_api(api_template: str, url: str):
     """Helper: fetch files from a single API template."""
     api_url = api_template.format(url=url)
-    log.info("\nREQUESTING API:", api_url, flush=True)
+    log.info(f"\nREQUESTING API: {api_url}")
 
     res = await retry_request("GET", api_url, attempts=2, delay=2)
     if not res:
         log.info("API failed after retries")
         return False
 
-    log.info("API STATUS:", res.status)
+    log.info(f"API STATUS: {res.status}")
 
     try:
         data = await res.json()
     except Exception as e:
-        log.info("JSON parse error:", e)
+        log.info(f"JSON parse error: {e}")
         return False
 
-    log.info("API RAW RESPONSE:", data)
+    log.info(f"API RAW RESPONSE: {data}")
 
     if not data.get("ok"):
         log.info("API returned ok=false")

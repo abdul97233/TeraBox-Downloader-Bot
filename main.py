@@ -1947,7 +1947,6 @@ async def handle_message(m: Message):
         fname_lower = data["file_name"].lower()
         skip_wm = any(fname_lower.endswith(ext) for ext in [".ts", ".mkv", ".webm", ".flv", ".avi"])
         if file_size > 10240 and not skip_wm:
-            await hm.edit(f"Adding watermark to `{data['file_name']}`...")
             wm_result = await asyncio.get_event_loop().run_in_executor(
                 None, add_watermark, download
             )
@@ -2006,7 +2005,6 @@ async def handle_message(m: Message):
             thumbnail = download_image_to_bytesio(vthumb, "thumb.jpg")
 
         # ---- Upload via self-hosted Telegram Bot API (2GB / high speed) ----
-        await hm.edit(f"Uploading `{data['file_name']}`...")
         sent_id = None
         try:
             api_res = await send_document_via_api(
@@ -2015,11 +2013,11 @@ async def handle_message(m: Message):
             )
             if api_res.get("ok"):
                 sent_id = api_res["result"]["message_id"]
-                log.info("Uploaded via custom Bot API, message_id:", sent_id, flush=True)
+                log.info(f"Uploaded via custom Bot API, message_id: {sent_id}")
             else:
-                log.info("Custom Bot API error:", api_res, flush=True)
+                log.info(f"Custom Bot API error: {api_res}")
         except Exception as e:
-            log.info("Custom Bot API upload failed:", e, flush=True)
+            log.info(f"Custom Bot API upload failed: {e}")
 
         # ---- Fallback to Telethon MTProto upload if Bot API path failed ----
         if sent_id is None:
@@ -2038,7 +2036,7 @@ async def handle_message(m: Message):
                 )
                 sent_id = file.id
             except Exception as e:
-                log.info("Telethon upload failed:", e, flush=True)
+                log.info(f"Telethon upload failed: {e}")
                 try:
                     os.unlink(download)
                 except Exception:
@@ -2075,7 +2073,7 @@ async def handle_message(m: Message):
             try:
                 await bot(ForwardMessagesRequest(**fwd_kwargs))
             except Exception as e:
-                log.info("Forward failed:", e)
+                log.info(f"Forward failed: {e}")
 
             # Cleanup download file
             try:
