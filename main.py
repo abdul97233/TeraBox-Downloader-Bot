@@ -51,6 +51,7 @@ AUDIT_LOG_KEY = "audit_log"            # Redis LIST — recent admin actions
 MAINTENANCE_KEY = "maintenance_mode"    # Redis STRING — "1" = maintenance on
 COOLDOWN_KEY = "download_cooldown"     # Redis STRING — user_id → timestamp
 DYNAMIC_ADMINS_KEY = "dynamic_admins"  # Redis SET — dynamically added admin IDs
+CUSTOM_TAGS_KEY = "custom_tags"        # Redis HASH — user_id → custom tag
 MAX_FILES_PER_REQUEST = 10
 DOWNLOAD_COOLDOWN_SECONDS = 10
 
@@ -123,6 +124,27 @@ def get_premium_remaining(user_id):
 def get_all_premium_users():
     """Return list of active premium user IDs."""
     return db.smembers(PREMIUM_SET_KEY)
+
+
+def get_custom_tag(user_id):
+    """Get custom tag for a user. Auto-sets owner/admin tags."""
+    uid = str(user_id)
+    # Auto-tag owner
+    if user_id == OWNER_ID:
+        tag = db.hget(CUSTOM_TAGS_KEY, uid) or "OWNER"
+        db.hset(CUSTOM_TAGS_KEY, uid, tag)
+        return tag
+    # Auto-tag admins
+    if is_admin(user_id):
+        tag = db.hget(CUSTOM_TAGS_KEY, uid) or "ADMIN"
+        db.hset(CUSTOM_TAGS_KEY, uid, tag)
+        return tag
+    return db.hget(CUSTOM_TAGS_KEY, uid) or ""
+
+
+def set_custom_tag(user_id, tag):
+    """Set custom tag for a user."""
+    db.hset(CUSTOM_TAGS_KEY, str(user_id), tag)
 
 
 def log_audit(action, admin_id, details=""):
@@ -329,9 +351,17 @@ async def generate_gc(m: UpdateNewMessage):
         db.hset(GC_REDIS_KEY, code, days)
         codes.append(code)
 
-    duration_label = f"{days} day(s)" if days > 0 else "Permanent"
+    duration_label = f"{days} day(s)" if days > 0 else "Permanent (Unlimited)"
 
-    await m.reply(f"**{count} Gift Card(s) Generated**\nDuration: {duration_label}\n\n`" + "`\n`".join(codes) + "`", parse_mode="markdown")
+    # Build redeem codes with /redeem prefix for easy copy
+    redeem_lines = "\n".join([f"`/redeem {c}`" for c in codes])
+
+    await m.reply(
+        f"**{count} Gift Card(s) Generated**\n\n"
+        f"Duration: **{duration_label}**\n\n"
+        f"**Send these to users:**\n{redeem_lines}",
+        parse_mode="markdown",
+    )
 
 
 # ==================== /gclist — LIST ALL GIFT CARDS ====================
@@ -352,8 +382,8 @@ async def list_gc(m: UpdateNewMessage):
     lines = []
     for code, days in all_codes.items():
         days = int(days)
-        label = "Permanent" if days == 0 else f"{days} day(s)"
-        lines.append(f"`{code}` → {label}")
+        label = "Permanent (Unlimited)" if days == 0 else f"{days} day(s)"
+        lines.append(f"`/redeem {code}` — {label}")
 
     await m.reply(
         f"**Gift Cards ({len(lines)}):**\n\n" + "\n".join(lines),
@@ -412,7 +442,12 @@ async def redeem_gc(m: UpdateNewMessage):
 
     if days == 0:
         grant_premium(user_id, 99999)
-        await m.reply("✅ Gift card redeemed!\n**Premium: Permanent**", parse_mode="markdown")
+        await m.reply(
+            "Gift card redeemed!\n\n"
+            "**Premium: Unlimited**\n"
+            "Duration: Permanent (never expires)",
+            parse_mode="markdown",
+        )
     else:
         grant_premium(user_id, days)
         import time as _time
@@ -420,7 +455,9 @@ async def redeem_gc(m: UpdateNewMessage):
         expiry = int(_time.time()) + (days * 86400)
         expiry_str = datetime.fromtimestamp(expiry).strftime("%d %b %Y, %I:%M %p")
         await m.reply(
-            f"✅ Gift card redeemed!\n**Premium: {days} day(s)**\nExpires: `{expiry_str}`",
+            f"Gift card redeemed!\n\n"
+            f"**Premium: {days} day(s)**\n"
+            f"Expires: `{expiry_str}`",
             parse_mode="markdown",
         )
 
@@ -449,7 +486,42 @@ async def allow_redeem(m: UpdateNewMessage):
     user_id = m.pattern_match.group(1)
     db.delete(f"gc_redeemed_{user_id}")
     log_audit("ALLOW_REDEEM", m.sender_id, f"Reset GC redemption for {user_id}")
-    await m.reply(f"✅ User `{user_id}` can now redeem another gift card.")
+    await m.reply(f"User `{user_id}` can now redeem another gift card.")
+
+
+# ==================== /settag — SET CUSTOM TAG ====================
+
+@bot.on(
+    events.NewMessage(
+        pattern=r"/settag\s+(\d+)\s+(.+)",
+        incoming=True,
+        outgoing=False,
+        func=lambda m: is_admin(m.sender_id),
+    )
+)
+async def set_tag_cmd(m: UpdateNewMessage):
+    user_id = int(m.pattern_match.group(1))
+    tag = m.pattern_match.group(2).strip()
+    set_custom_tag(user_id, tag)
+    log_audit("SET_TAG", m.sender_id, f"Set tag '{tag}' for {user_id}")
+    await m.reply(f"Tag set!\nUser: `{user_id}`\nTag: **{tag}**", parse_mode="markdown")
+
+
+# ==================== /tag — VIEW YOUR TAG ====================
+
+@bot.on(
+    events.NewMessage(
+        pattern="/tag",
+        incoming=True,
+        outgoing=False,
+    )
+)
+async def view_tag_cmd(m: UpdateNewMessage):
+    tag = get_custom_tag(m.sender_id)
+    if tag:
+        await m.reply(f"Your tag: **{tag}**", parse_mode="markdown")
+    else:
+        await m.reply("You have no custom tag.\nAdmins can set one with `/settag <user_id> <tag>`")
 
 
 @bot.on(
@@ -1811,10 +1883,11 @@ async def update_bot(m: UpdateNewMessage):
                 )
                 await msg.edit(
                     "Update completed!\n\n"
-                    f"`{output}`\n\n"
-                    "Bot is restarting in 3 seconds..."
+                    f"`{output}`"
                 )
-                await asyncio.sleep(3)
+                # Send separate restart message (visible even after restart)
+                await m.reply("Restarting bot now...")
+                await asyncio.sleep(5)
                 os.execl(sys.executable, sys.executable, *sys.argv)
         else:
             # Try to restore stash even on error
@@ -2465,21 +2538,15 @@ async def get_logs(m: UpdateNewMessage):
     count = int(m.pattern_match.group(1) or 20)
     count = min(count, 100)
     try:
-        result = subprocess.run(
-            ["journalctl", "-u", "terabox", "--no-pager", "-n", str(count), "--output=short-iso"],
-            capture_output=True, text=True, timeout=10
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            logs = result.stdout.strip()
+        log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot.log")
+        if os.path.isfile(log_path):
+            with open(log_path, "r", errors="ignore") as f:
+                lines = f.readlines()
+            if not lines:
+                return await m.reply("Log file is empty.")
+            logs = "".join(lines[-count:])
         else:
-            # Fallback: try reading a log file
-            log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot.log")
-            if os.path.isfile(log_path):
-                with open(log_path, "r", errors="ignore") as f:
-                    lines = f.readlines()
-                logs = "".join(lines[-count:])
-            else:
-                return await m.reply("No logs found.")
+            return await m.reply("No log file found. Bot must run with:\n`nohup python -u main.py > bot.log 2>&1 &`")
     except Exception as e:
         return await m.reply(f"Error reading logs: `{e}`")
 
