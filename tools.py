@@ -1,3 +1,5 @@
+import logging
+log = logging.getLogger(__name__)
 import asyncio
 import os
 import re
@@ -34,10 +36,10 @@ def _ensure_font():
             import urllib.request
             urllib.request.urlretrieve(url, FONT_PATH)
             if os.path.isfile(FONT_PATH) and os.path.getsize(FONT_PATH) > 1000:
-                print(f"Font downloaded: {FONT_PATH}")
+                log.info(f"Font downloaded: {FONT_PATH}")
                 return
         except Exception as e:
-            print(f"Font download failed from {url}: {e}")
+            log.info(f"Font download failed from {url}: {e}")
     # Fallback: try system fonts
     for f in ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
               "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
@@ -54,7 +56,7 @@ _ensure_font()
 def add_watermark(input_path: str) -> str | bool:
     """Add watermark to video using ffmpeg. Returns watermarked file path or False."""
     if not FFMPEG_PATH:
-        print("ffmpeg not found, skipping watermark", flush=True)
+        log.info("ffmpeg not found, skipping watermark", flush=True)
         return False
 
     output_path = input_path + ".wm.mp4"
@@ -96,12 +98,12 @@ def add_watermark(input_path: str) -> str | bool:
             os.replace(output_path, input_path)
             return input_path
         else:
-            print(f"ffmpeg watermark error: {result.stderr[:500]}")
+            log.info(f"ffmpeg watermark error: {result.stderr[:500]}")
             if os.path.exists(output_path):
                 os.unlink(output_path)
             return False
     except Exception as e:
-        print(f"Watermark failed: {e}")
+        log.info(f"Watermark failed: {e}")
         if os.path.exists(output_path):
             os.unlink(output_path)
         return False
@@ -129,7 +131,7 @@ def get_video_info(file_path: str) -> dict:
         cap.release()
         info = {"duration": duration, "width": w, "height": h, "thumbnail": thumb_path}
     except Exception as e:
-        print(f"get_video_info error: {e}")
+        log.info(f"get_video_info error: {e}")
     return info
 
 
@@ -461,16 +463,16 @@ async def download_file(
         if total > 0 and os.path.isfile(filename):
             actual = os.path.getsize(filename)
             if actual < total:
-                print(f"Incomplete download: {actual}/{total} bytes", flush=True)
+                log.info(f"Incomplete download: {actual}/{total} bytes", flush=True)
                 return False
 
         return filename
 
     except asyncio.TimeoutError:
-        print(f"Download timeout for {url}")
+        log.info(f"Download timeout for {url}")
         return False
     except Exception as e:
-        print(f"Error downloading file: {e}")
+        log.info(f"Error downloading file: {e}")
         return False
 
 

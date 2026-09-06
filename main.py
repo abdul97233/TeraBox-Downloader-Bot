@@ -35,6 +35,17 @@ from tools import (
 
 bot = TelegramClient("tele", API_ID, API_HASH)
 
+LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot.log")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+log = logging.getLogger("bot")
+
 db = redis.Redis(
     host=HOST,
     port=PORT,
@@ -1843,7 +1854,7 @@ async def handle_message(m: Message):
                 )
                 return
         except Exception as e:
-            print(f"Cache forward failed: {e}")
+            log.info(f"Cache forward failed: {e}")
 
     user_first_name = m.sender.first_name
     user_username = m.sender.username
@@ -1941,7 +1952,7 @@ async def handle_message(m: Message):
                 None, add_watermark, download
             )
             if not wm_result:
-                print(f"Watermark skipped for: {data['file_name']}")
+                log.info(f"Watermark skipped for: {data['file_name']}")
         else:
             wm_result = False
 
@@ -1963,7 +1974,7 @@ async def handle_message(m: Message):
                 if result.returncode == 0 and os.path.isfile(compressed_path):
                     os.replace(compressed_path, download)
             except Exception as e:
-                print(f"Compression failed: {e}")
+                log.info(f"Compression failed: {e}")
                 if os.path.isfile(compressed_path):
                     os.unlink(compressed_path)
 
@@ -2004,11 +2015,11 @@ async def handle_message(m: Message):
             )
             if api_res.get("ok"):
                 sent_id = api_res["result"]["message_id"]
-                print("Uploaded via custom Bot API, message_id:", sent_id, flush=True)
+                log.info("Uploaded via custom Bot API, message_id:", sent_id, flush=True)
             else:
-                print("Custom Bot API error:", api_res, flush=True)
+                log.info("Custom Bot API error:", api_res, flush=True)
         except Exception as e:
-            print("Custom Bot API upload failed:", e, flush=True)
+            log.info("Custom Bot API upload failed:", e, flush=True)
 
         # ---- Fallback to Telethon MTProto upload if Bot API path failed ----
         if sent_id is None:
@@ -2027,7 +2038,7 @@ async def handle_message(m: Message):
                 )
                 sent_id = file.id
             except Exception as e:
-                print("Telethon upload failed:", e, flush=True)
+                log.info("Telethon upload failed:", e, flush=True)
                 try:
                     os.unlink(download)
                 except Exception:
@@ -2064,7 +2075,7 @@ async def handle_message(m: Message):
             try:
                 await bot(ForwardMessagesRequest(**fwd_kwargs))
             except Exception as e:
-                print("Forward failed:", e)
+                log.info("Forward failed:", e)
 
             # Cleanup download file
             try:
@@ -2133,7 +2144,7 @@ async def clean_downloads(m: UpdateNewMessage):
             os.unlink(f)
             deleted += 1
         except Exception as e:
-            print(f"Failed to delete {f}: {e}")
+            log.info(f"Failed to delete {f}: {e}")
 
     if deleted:
         return await m.reply(
@@ -2161,9 +2172,9 @@ async def auto_cleanup_downloads():
                     if now - file_mtime > CLEANUP_INTERVAL:
                         try:
                             os.unlink(filepath)
-                            print(f"Auto-deleted old file: {filepath}")
+                            log.info(f"Auto-deleted old file: {filepath}")
                         except Exception as e:
-                            print(f"Failed to auto-delete {filepath}: {e}")
+                            log.info(f"Failed to auto-delete {filepath}: {e}")
         except asyncio.CancelledError:
             break
 
@@ -3447,8 +3458,8 @@ async def list_admins(m: UpdateNewMessage):
 # Start the cleanup task before running the bot
 cleanup_task = bot.loop.create_task(auto_cleanup_downloads())
 
-print("Bot starting...", flush=True)
+log.info("Bot starting...")
 bot.start(bot_token=BOT_TOKEN)
-print("Bot is running!", flush=True)
+log.info("Bot is running!")
 bot.run_until_disconnected()
 cleanup_task.cancel()

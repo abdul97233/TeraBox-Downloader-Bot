@@ -1,3 +1,5 @@
+import logging
+log = logging.getLogger(__name__)
 import asyncio
 import re
 from urllib.parse import parse_qs, urlparse
@@ -93,9 +95,9 @@ async def retry_request(method, url, attempts=3, delay=2, **kwargs):
                         resp._text = await resp.text()
                         resp._json = None
                         return resp
-                    print(f"[Retry {i}] HTTP {resp.status}")
+                    log.info(f"[Retry {i}] HTTP {resp.status}")
         except Exception as e:
-            print(f"[Retry {i}] Error:", e)
+            log.info(f"[Retry {i}] Error:", e)
         await asyncio.sleep(delay)
     return None
 
@@ -105,30 +107,30 @@ async def retry_request(method, url, attempts=3, delay=2, **kwargs):
 async def _fetch_files_from_api(api_template: str, url: str):
     """Helper: fetch files from a single API template."""
     api_url = api_template.format(url=url)
-    print("\nREQUESTING API:", api_url, flush=True)
+    log.info("\nREQUESTING API:", api_url, flush=True)
 
     res = await retry_request("GET", api_url, attempts=2, delay=2)
     if not res:
-        print("API failed after retries")
+        log.info("API failed after retries")
         return False
 
-    print("API STATUS:", res.status)
+    log.info("API STATUS:", res.status)
 
     try:
         data = await res.json()
     except Exception as e:
-        print("JSON parse error:", e)
+        log.info("JSON parse error:", e)
         return False
 
-    print("API RAW RESPONSE:", data)
+    log.info("API RAW RESPONSE:", data)
 
     if not data.get("ok"):
-        print("API returned ok=false")
+        log.info("API returned ok=false")
         return False
 
     files = data.get("files")
     if not files:
-        print("No files in API response")
+        log.info("No files in API response")
         return False
 
     result = []
@@ -147,7 +149,7 @@ async def _fetch_files_from_api(api_template: str, url: str):
         })
 
     if not result:
-        print("No valid download urls in API response")
+        log.info("No valid download urls in API response")
         return False
 
     return result
@@ -161,7 +163,7 @@ async def get_files(url: str):
         return result
 
     # Fallback to secondary API
-    print("\nPrimary API failed, trying fallback API...")
+    log.info("\nPrimary API failed, trying fallback API...")
     result = await _fetch_files_from_api(TERABOX_FALLBACK_API_TEMPLATE, url)
     if result:
         return result
