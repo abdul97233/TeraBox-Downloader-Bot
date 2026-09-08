@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from io import BytesIO
 from urllib.parse import parse_qs, urlparse
 
@@ -137,6 +138,8 @@ def get_video_info(file_path: str) -> dict:
     """Extract duration, width, height and thumbnail from a video file using OpenCV."""
     info = {"duration": 0, "width": 0, "height": 0, "thumbnail": None}
     try:
+        if not os.path.isfile(file_path) or os.path.getsize(file_path) < 1024:
+            return info
         cap = cv2.VideoCapture(file_path)
         if not cap.isOpened():
             return info
@@ -176,6 +179,7 @@ class _ProgressFileWrapper:
         self._total = total
         self._loop = loop
         self._read = 0
+        self._last_callback = 0
 
     def __len__(self):
         return self._total
@@ -184,13 +188,17 @@ class _ProgressFileWrapper:
         data = self._f.read(size)
         if data:
             self._read += len(data)
-            if self._cb:
-                try:
-                    asyncio.run_coroutine_threadsafe(
-                        self._cb(self._read, self._total), self._loop
-                    )
-                except Exception:
-                    pass
+            if self._cb and self._total > 0:
+                now = time.time()
+                if now - self._last_callback >= 2.0:
+                    self._last_callback = now
+                    try:
+                        future = asyncio.run_coroutine_threadsafe(
+                            self._cb(self._read, self._total, "Uploading"), self._loop
+                        )
+                        future.result(timeout=5)
+                    except Exception:
+                        pass
         return data
 
 
@@ -447,10 +455,10 @@ async def download_file(
     callback=None,
 ) -> str | bool:
     try:
-        timeout = aiohttp.ClientTimeout(total=3600, connect=15, sock_read=120)
+        timeout = aiohttp.ClientTimeout(total=3600, connect=15, sock_read=60)
         connector = aiohttp.TCPConnector(
             limit=10, force_close=False,
-            ttl_dns_cache=300, keepalive_timeout=120,
+            ttl_dns_cache=300, keepalive_timeout=60,
             enable_cleanup_closed=True,
         )
         headers = {
@@ -468,20 +476,24 @@ async def download_file(
             "sec-ch-ua-mobile": "?0",
             "sec-ch-ua-platform": '"Windows"',
         }
-        async with aiohttp.ClientSession(connector=connector, headers=headers) as session:
-            async with session.get(url, timeout=timeout) as response:
-                response.raise_for_status()
-                total = int(response.headers.get("Content-Length", 0))
-                downloaded = 0
-                if total > 0:
-                    with open(filename, "wb") as f:
-                        f.truncate(total)
-                with open(filename, "r+b" if total > 0 else "wb") as file:
-                    async for chunk in response.content.iter_chunked(2097152):
-                        file.write(chunk)
-                        downloaded += len(chunk)
-                        if callback:
-                            await callback(downloaded, total, "Downloading")
+        session = aiohttp.ClientSession(connector=connector, headers=headers)
+        try:
+            async with session:
+                async with session.get(url, timeout=timeout) as response:
+                    response.raise_for_status()
+                    total = int(response.headers.get("Content-Length", 0))
+                    downloaded = 0
+                    if total > 0:
+                        with open(filename, "wb") as f:
+                            f.truncate(total)
+                    with open(filename, "r+b" if total > 0 else "wb") as file:
+                        async for chunk in response.content.iter_chunked(2097152):
+                            file.write(chunk)
+                            downloaded += len(chunk)
+                            if callback:
+                                await callback(downloaded, total, "Downloading")
+        except Exception:
+            raise
 
         # Verify download is complete
         if total > 0 and os.path.isfile(filename):

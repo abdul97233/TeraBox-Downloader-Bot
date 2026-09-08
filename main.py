@@ -1920,6 +1920,11 @@ async def handle_message(m: Message):
                 parse_mode="markdown",
             )
 
+        try:
+            await hm.edit(f"✅ Downloaded `{data['file_name']}` — processing...")
+        except Exception:
+            pass
+
         file_size = os.path.getsize(download)
         skip_wm = any(fname_lower.endswith(ext) for ext in [
                     ".ts", ".mkv", ".webm", ".flv", ".avi",
@@ -1930,7 +1935,15 @@ async def handle_message(m: Message):
                 ])
         wm_limit = 500_000_000 if not is_premium else 200_000_000
         if 10240 < file_size < wm_limit and not skip_wm:
-            await asyncio.get_event_loop().run_in_executor(None, add_watermark, download)
+            try:
+                await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, add_watermark, download),
+                    timeout=120,
+                )
+            except asyncio.TimeoutError:
+                log.info(f"Watermark timed out for: {data['file_name']}")
+            except Exception as e:
+                log.info(f"Watermark error: {e}")
 
         dl_quality = getattr(m, '_dl_quality', None)
         if dl_quality and dl_quality in DL_QUALITY_MAP:
@@ -1970,7 +1983,13 @@ async def handle_message(m: Message):
          @NTMpro
 """
 
-        vinfo = get_video_info(download)
+        try:
+            vinfo = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(None, get_video_info, download),
+                timeout=30,
+            )
+        except (asyncio.TimeoutError, Exception):
+            vinfo = {"duration": 0, "width": 0, "height": 0, "thumbnail": None}
         vduration = vinfo.get("duration", 0)
         vwidth = vinfo.get("width", 0)
         vheight = vinfo.get("height", 0)
@@ -2136,7 +2155,13 @@ async def handle_message(m: Message):
                 ])
                 wm_limit = 200_000_000
                 if 10240 < file_size < wm_limit and not skip_wm:
-                    await asyncio.get_event_loop().run_in_executor(None, add_watermark, download)
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.get_event_loop().run_in_executor(None, add_watermark, download),
+                            timeout=120,
+                        )
+                    except (asyncio.TimeoutError, Exception):
+                        pass
 
                 user_tag = get_custom_tag(m.sender_id)
                 tag_str = f" [{user_tag}]" if user_tag else ""
@@ -2155,7 +2180,13 @@ async def handle_message(m: Message):
          @NTMpro
 """
 
-                vinfo = get_video_info(download)
+                try:
+                    vinfo = await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(None, get_video_info, download),
+                        timeout=30,
+                    )
+                except (asyncio.TimeoutError, Exception):
+                    vinfo = {"duration": 0, "width": 0, "height": 0, "thumbnail": None}
                 sent_id = None
                 try:
                     api_res = await send_document_via_api(
@@ -2868,9 +2899,21 @@ async def folder_download(m: UpdateNewMessage):
                     ".roq", ".mng", ".ogm", ".trp", ".tp", ".pva",
                 ])
             if 10240 < file_size < wm_limit and not skip_wm:
-                await asyncio.get_event_loop().run_in_executor(None, add_watermark, download)
+                try:
+                    await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(None, add_watermark, download),
+                        timeout=120,
+                    )
+                except (asyncio.TimeoutError, Exception):
+                    pass
 
-            vinfo = get_video_info(download)
+            try:
+                vinfo = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, get_video_info, download),
+                    timeout=30,
+                )
+            except (asyncio.TimeoutError, Exception):
+                vinfo = {"duration": 0, "width": 0, "height": 0, "thumbnail": None}
             caption = f"📁 `{data['file_name']}` ({data['size']})"
 
             sent_id = None
