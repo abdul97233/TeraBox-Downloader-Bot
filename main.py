@@ -512,7 +512,7 @@ async def gc_page_cb(e):
 
     lines = []
     for i, item in enumerate(page_items, start=start + 1):
-        tag_str = f" [{item.get('tag', '')}]" if item.get('tag') else ""
+        tag_str = f" ({item.get('tag', '')})" if item.get('tag') else ""
         if item["status"] == "available":
             lines.append(f"{i}. `/redeem {item['code']}` — {item['label']}{tag_str} [Available]")
         else:
@@ -1821,7 +1821,7 @@ async def handle_message(m: Message):
             if valid_msgs:
                 data = files_to_process[0]
                 user_tag = get_custom_tag(m.sender_id)
-                tag_str = f" [{user_tag}]" if user_tag else ""
+                tag_str = f" ({user_tag})" if user_tag else ""
                 cached_caption = f"""
 ┏━━━━━━━━━━⍟
 ┃ 𝐍𝐓𝐌 𝐓𝐞𝐫𝐚 𝐁𝐨𝐱 𝐃𝐨𝐰𝐧𝐥𝐨𝐚𝐝𝐞𝐫 𝐁𝐨𝐭
@@ -1966,7 +1966,7 @@ async def handle_message(m: Message):
                     os.unlink(compressed_path)
 
         user_tag = get_custom_tag(m.sender_id)
-        tag_str = f" [{user_tag}]" if user_tag else ""
+        tag_str = f" ({user_tag})" if user_tag else ""
 
         caption = f"""
 ┏━━━━━━━━━━⍟
@@ -2164,7 +2164,7 @@ async def handle_message(m: Message):
                         pass
 
                 user_tag = get_custom_tag(m.sender_id)
-                tag_str = f" [{user_tag}]" if user_tag else ""
+                tag_str = f" ({user_tag})" if user_tag else ""
                 total_time = time.time() - start_time
                 caption = f"""
 ┏━━━━━━━━━━⍟
@@ -2914,7 +2914,28 @@ async def folder_download(m: UpdateNewMessage):
                 )
             except (asyncio.TimeoutError, Exception):
                 vinfo = {"duration": 0, "width": 0, "height": 0, "thumbnail": None}
-            caption = f"📁 `{data['file_name']}` ({data['size']})"
+            vduration = vinfo.get("duration", 0)
+            total_time = time.time() - start_time
+
+            user_tag = get_custom_tag(m.sender_id)
+            tag_str = f" ({user_tag})" if user_tag else ""
+            user_first_name = m.sender.first_name
+            user_username = m.sender.username
+
+            caption = f"""
+┏━━━━━━━━━━⍟
+┃ 𝐍𝐓𝐌 𝐓𝐞𝐫𝐚 𝐁𝐨𝐱 𝐃𝐨𝐰𝐧𝐥𝐨𝐚𝐝𝐞𝐫 𝐁𝐨𝐭
+┗━━━━━━━━━━━━━━━━━⍟
+╔══════════⍟
+╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{data['file_name']}`
+╟➣𝙎𝙞𝙯𝙚: **{escape_markdown(data['size'])}**
+╟➣𝗗𝗶𝗿𝗲𝗰𝘁 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱 𝗟𝗶𝗻𝗸 : [Click here]({data['direct_link']})
+╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}{tag_str}
+╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(user_username or '-')}
+╟➣𝐓𝐨𝐭𝐚𝐥 𝐓𝐢𝐦𝐞 𝐓𝐚𝐤𝐞𝐧: {total_time:.1f} sec
+╚═════════════════⍟
+         @NTMpro
+"""
 
             sent_id = None
             try:
