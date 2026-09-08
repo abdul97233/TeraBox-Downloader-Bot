@@ -14,7 +14,31 @@ import requests
 from telethon import TelegramClient
 
 
-VIDEO_EXTENSIONS = (".mp4", ".mkv", ".webm", ".mov", ".avi", ".flv", ".wmv", ".m4v", ".mpg", ".mpeg", ".3gp", ".ts", ".vob", ".ogv", ".mts", ".m2ts", ".divx", ".asf", ".rm", ".rmvb")
+VIDEO_EXTENSIONS = (
+    # Common
+    ".mp4", ".mkv", ".webm", ".mov", ".avi", ".flv", ".wmv", ".m4v",
+    ".mpg", ".mpeg", ".3gp", ".ts", ".vob", ".ogv", ".mts", ".m2ts",
+    ".divx", ".asf", ".rm", ".rmvb",
+    # Mobile / 3GPP
+    ".3g2", ".3gp2", ".3gpp2",
+    # Flash
+    ".f4v", ".f4p", ".swf",
+    # MPEG variants
+    ".mpe", ".mpv", ".m2v", ".m2p", ".mpg4", ".mpeg1", ".mpeg2", ".mpeg4",
+    # QuickTime
+    ".qt", ".hdmov",
+    # Raw codec streams
+    ".h264", ".h265", ".hevc",
+    # Camcorder / DVD
+    ".mod", ".tod", ".dav", ".hdv",
+    # Samsung / Sony
+    ".svi",
+    # Ogg variants
+    ".ogm",
+    # Other
+    ".amv", ".drc", ".dv", ".roq", ".nsv", ".xvid", ".mng", ".mxg",
+    ".tp", ".trp", ".ps", ".pva",
+)
 
 WATERMARK_TEXT = "@TERA_NTM_BOT"
 FFMPEG_PATH = shutil.which("ffmpeg")
