@@ -1921,7 +1921,13 @@ async def handle_message(m: Message):
             )
 
         file_size = os.path.getsize(download)
-        skip_wm = any(fname_lower.endswith(ext) for ext in [".ts", ".mkv", ".webm", ".flv", ".avi"])
+        skip_wm = any(fname_lower.endswith(ext) for ext in [
+                    ".ts", ".mkv", ".webm", ".flv", ".avi",
+                    ".m2ts", ".mts", ".vob", ".rm", ".rmvb",
+                    ".asf", ".divx", ".3g2", ".3gpp2", ".mod", ".tod",
+                    ".dav", ".hdv", ".svi", ".swf", ".amv", ".nsv",
+                    ".roq", ".mng", ".ogm", ".trp", ".tp", ".pva",
+                ])
         wm_limit = 500_000_000 if not is_premium else 200_000_000
         if 10240 < file_size < wm_limit and not skip_wm:
             await asyncio.get_event_loop().run_in_executor(None, add_watermark, download)
@@ -2121,7 +2127,13 @@ async def handle_message(m: Message):
                     return
 
                 file_size = os.path.getsize(download)
-                skip_wm = any(fname_lower.endswith(ext) for ext in [".ts", ".mkv", ".webm", ".flv", ".avi"])
+                skip_wm = any(fname_lower.endswith(ext) for ext in [
+                    ".ts", ".mkv", ".webm", ".flv", ".avi",
+                    ".m2ts", ".mts", ".vob", ".rm", ".rmvb",
+                    ".asf", ".divx", ".3g2", ".3gpp2", ".mod", ".tod",
+                    ".dav", ".hdv", ".svi", ".swf", ".amv", ".nsv",
+                    ".roq", ".mng", ".ogm", ".trp", ".tp", ".pva",
+                ])
                 wm_limit = 200_000_000
                 if 10240 < file_size < wm_limit and not skip_wm:
                     await asyncio.get_event_loop().run_in_executor(None, add_watermark, download)
@@ -2848,7 +2860,13 @@ async def folder_download(m: UpdateNewMessage):
 
             wm_limit = 200_000_000
             file_size = os.path.getsize(download)
-            skip_wm = any(fname_lower.endswith(ext) for ext in [".ts", ".mkv", ".webm", ".flv", ".avi"])
+            skip_wm = any(fname_lower.endswith(ext) for ext in [
+                    ".ts", ".mkv", ".webm", ".flv", ".avi",
+                    ".m2ts", ".mts", ".vob", ".rm", ".rmvb",
+                    ".asf", ".divx", ".3g2", ".3gpp2", ".mod", ".tod",
+                    ".dav", ".hdv", ".svi", ".swf", ".amv", ".nsv",
+                    ".roq", ".mng", ".ogm", ".trp", ".tp", ".pva",
+                ])
             if 10240 < file_size < wm_limit and not skip_wm:
                 await asyncio.get_event_loop().run_in_executor(None, add_watermark, download)
 
