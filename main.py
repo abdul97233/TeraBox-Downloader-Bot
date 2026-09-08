@@ -2823,7 +2823,7 @@ async def folder_download(m: UpdateNewMessage):
         return await handle_message(m)
 
     total = len(files)
-    cansend = CanSend(interval=3)
+    cansend = CanSend(interval=2)
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
     done_count = 0
@@ -2984,6 +2984,7 @@ async def folder_download(m: UpdateNewMessage):
                 pass
 
     tasks = [process_file(idx, data) for idx, data in enumerate(files, start=1)]
+    await update_progress("Starting downloads...")
     await asyncio.gather(*tasks)
 
     await hm.edit(
