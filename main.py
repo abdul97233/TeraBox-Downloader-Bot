@@ -67,6 +67,8 @@ CUSTOM_TAGS_KEY = "custom_tags"        # Redis HASH — user_id → custom tag
 GC_USED_KEY = "gc_used"                # Redis HASH — code → "user_id:timestamp:days"
 MAX_FILES_PER_REQUEST = 10
 DOWNLOAD_COOLDOWN_SECONDS = 10
+PARALLEL_DOWNLOADS = 5
+download_semaphore = asyncio.Semaphore(PARALLEL_DOWNLOADS)
 
 
 # ==================== DYNAMIC ADMIN SYSTEM ====================
@@ -1862,67 +1864,46 @@ async def handle_message(m: Message):
 
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-    for idx, data in enumerate(files_to_process, start=1):
+    # ---- Single file: original detailed flow ----
+    if total == 1:
+        data = files_to_process[0]
 
-        # -------- Per-file supported type check --------
         fname_lower = data["file_name"].lower()
         file_ext = "." + fname_lower.rsplit(".", 1)[-1] if "." in fname_lower else ""
         if file_ext not in VIDEO_EXTENSIONS:
-            if total == 1:
-                supported = ", ".join(VIDEO_EXTENSIONS)
-                return await hm.edit(
-                    f"Sorry! File type `{file_ext}` is not supported.\nSupported: {supported}"
-                )
-            await hm.edit(f"Skipping unsupported file: `{data['file_name']}`")
-            continue
+            supported = ", ".join(VIDEO_EXTENSIONS)
+            return await hm.edit(
+                f"Sorry! File type `{file_ext}` is not supported.\nSupported: {supported}"
+            )
 
-        # -------- Per-file size check (admins and premium bypass) --------
         if int(data["sizebytes"]) > 524288000 and not is_admin(m.sender_id) and not is_premium:
-            if total == 1:
-                return await hm.edit(
-                    f"Sorry! File is too big. I can download only 500MB and this file is of {data['size']} ."
-                )
-            await hm.edit(f"Skipping too big file: `{data['file_name']}` ({data['size']})")
-            continue
+            return await hm.edit(
+                f"Sorry! File is too big. I can download only 500MB and this file is of {data['size']} ."
+            )
 
         start_time = time.time()
-        label = f"({idx}/{total}) " if total > 1 else ""
-
-        cansend = CanSend(interval=2)
 
         async def progress_bar(current_downloaded, total_downloaded, state="Downloading"):
-
-            if not cansend.can_send():
+            if not cansend.can_send() or total_downloaded == 0:
                 return
-            if total_downloaded == 0:
-                return
-
             bar_length = 20
             percent = min(current_downloaded / total_downloaded, 1.0)
             filled = int(percent * bar_length)
             arrow = "█" * filled
             spaces = "░" * (bar_length - filled)
-
             elapsed_time = time.time() - start_time
             if elapsed_time < 1:
                 return
-
-            speed = current_downloaded / elapsed_time if elapsed_time > 0 else 0
+            speed = current_downloaded / elapsed_time
             speed_mb = speed / (1024 * 1024)
-
             remaining = (total_downloaded - current_downloaded) / speed if speed > 0 else 0
-
-            head = f"{state} {label}`{data['file_name']}`"
+            head = f"{state} `{data['file_name']}`"
             bar = f"[{arrow}{spaces}] {percent:.0%}"
             spd = f"Speed: {speed_mb:.1f} MB/s"
             eta = f"ETA: {convert_seconds(remaining)}"
             sz = f"Size: {get_formatted_size(current_downloaded)} / {get_formatted_size(total_downloaded)}"
-
             try:
-                await hm.edit(
-                    f"{head}\n{bar}\n{spd} | {eta}\n{sz}",
-                    parse_mode="markdown",
-                )
+                await hm.edit(f"{head}\n{bar}\n{spd} | {eta}\n{sz}", parse_mode="markdown")
             except Exception:
                 pass
 
@@ -1934,34 +1915,21 @@ async def handle_message(m: Message):
         )
         total_time = time.time() - start_time
         if not download:
-            if total == 1:
-                return await hm.edit(
-                    f"Sorry! Download Failed but you can download it from [here]({url}).",
-                    parse_mode="markdown",
-                )
-            await hm.edit(f"Download failed for `{data['file_name']}`")
-            continue
+            return await hm.edit(
+                f"Sorry! Download Failed but you can download it from [here]({url}).",
+                parse_mode="markdown",
+            )
 
-        # ---- Add watermark (skip for small/unsupported files) ----
         file_size = os.path.getsize(download)
-        fname_lower = data["file_name"].lower()
         skip_wm = any(fname_lower.endswith(ext) for ext in [".ts", ".mkv", ".webm", ".flv", ".avi"])
         wm_limit = 500_000_000 if not is_premium else 200_000_000
         if 10240 < file_size < wm_limit and not skip_wm:
-            wm_result = await asyncio.get_event_loop().run_in_executor(
-                None, add_watermark, download
-            )
-            if not wm_result:
-                log.info(f"Watermark skipped for: {data['file_name']}")
-        else:
-            wm_result = False
+            await asyncio.get_event_loop().run_in_executor(None, add_watermark, download)
 
-        # ---- Compress if quality specified ----
         dl_quality = getattr(m, '_dl_quality', None)
         if dl_quality and dl_quality in DL_QUALITY_MAP:
             height, crf = DL_QUALITY_MAP[dl_quality]
             compressed_path = download + f".{dl_quality}.mp4"
-            await hm.edit(f"Compressing to {dl_quality}...")
             try:
                 cmd = [
                     "ffmpeg", "-y", "-i", download,
@@ -1996,7 +1964,6 @@ async def handle_message(m: Message):
          @NTMpro
 """
 
-        # ---- Extract video metadata (duration, width, height, thumbnail) ----
         vinfo = get_video_info(download)
         vduration = vinfo.get("duration", 0)
         vwidth = vinfo.get("width", 0)
@@ -2005,7 +1972,6 @@ async def handle_message(m: Message):
         if vthumb and not thumbnail:
             thumbnail = download_image_to_bytesio(vthumb, "thumb.jpg")
 
-        # ---- Upload via self-hosted Telegram Bot API (2GB / high speed) ----
         sent_id = None
         try:
             api_res = await send_document_via_api(
@@ -2020,20 +1986,12 @@ async def handle_message(m: Message):
         except Exception as e:
             log.info(f"Custom Bot API upload failed: {e}")
 
-        # ---- Fallback to Telethon MTProto upload if Bot API path failed ----
         if sent_id is None:
             try:
                 file = await bot.send_file(
-                    PRIVATE_CHAT_ID,
-                    file=download,
-                    thumb=thumbnail if thumbnail else None,
-                    progress_callback=progress_bar,
-                    caption=caption,
-                    video=True,
-                    supports_streaming=True,
-                    duration=vduration,
-                    attributes=[],
-                    spoiler=True,
+                    PRIVATE_CHAT_ID, file=download, thumb=thumbnail if thumbnail else None,
+                    progress_callback=progress_bar, caption=caption, video=True,
+                    supports_streaming=True, duration=vduration, attributes=[], spoiler=True,
                 )
                 sent_id = file.id
             except Exception as e:
@@ -2042,13 +2000,10 @@ async def handle_message(m: Message):
                     os.unlink(download)
                 except Exception:
                     pass
-                if total == 1:
-                    return await hm.edit(
-                        f"Sorry! Upload Failed but you can download it from [here]({url}).",
-                        parse_mode="markdown",
-                    )
-                await hm.edit(f"Upload failed for `{data['file_name']}`")
-                continue
+                return await hm.edit(
+                    f"Sorry! Upload Failed but you can download it from [here]({url}).",
+                    parse_mode="markdown",
+                )
 
         if sent_id:
             if shorturl:
@@ -2059,15 +2014,9 @@ async def handle_message(m: Message):
                     db.set(shorturl, sent_id)
             db.set(uuid, sent_id)
 
-            # ---- Forward video from PRIVATE_CHAT_ID to user (instant, no re-upload) ----
             fwd_kwargs = dict(
-                from_peer=PRIVATE_CHAT_ID,
-                id=[sent_id],
-                to_peer=m.chat.id,
-                drop_author=True,
-                background=True,
-                drop_media_captions=False,
-                with_my_score=True,
+                from_peer=PRIVATE_CHAT_ID, id=[sent_id], to_peer=m.chat.id,
+                drop_author=True, background=True, drop_media_captions=False, with_my_score=True,
             )
             if m.is_group:
                 fwd_kwargs["top_msg_id"] = m.id
@@ -2076,26 +2025,20 @@ async def handle_message(m: Message):
             except Exception as e:
                 log.info(f"Forward failed: {e}")
 
-            # Cleanup download file
             try:
                 os.unlink(download)
             except Exception:
                 pass
 
-            # Success message
             try:
                 await hm.edit("✅ Video sent successfully to your chat!")
             except Exception:
                 pass
 
-            # Track download stats
             db.hincrby(STATS_KEY, "total_downloads", 1)
-
-            # Track history
             import json as _json
             history_entry = _json.dumps({
-                "file": data["file_name"],
-                "size": data["size"],
+                "file": data["file_name"], "size": data["size"],
                 "time": time.strftime("%Y-%m-%d %H:%M:%S"),
             })
             existing_history = db.get(f"history_{m.sender_id}")
@@ -2104,12 +2047,172 @@ async def handle_message(m: Message):
             if len(history_list) > 50:
                 history_list = history_list[-50:]
             db.set(f"history_{m.sender_id}", _json.dumps(history_list), ex=2592000)
+            db.set(f"check_{m.sender_id}", int(count) + 1 if count else 1, ex=3600)
 
-            db.set(
-                f"check_{m.sender_id}",
-                int(count) + 1 if count else 1,
-                ex=3600,
+    # ---- Multi-file (premium): parallel downloads, send as ready ----
+    else:
+        done_count = 0
+        sent_count = 0
+        failed_count = 0
+
+        async def update_multi_progress(status_msg=""):
+            nonlocal done_count, sent_count, failed_count
+            if not cansend.can_send():
+                return
+            bar_length = 20
+            filled = int((done_count / total) * bar_length)
+            arrow = "█" * filled
+            spaces = "░" * (bar_length - filled)
+            text = (
+                f"📦 Downloading `{done_count}/{total}` files\n"
+                f"[{arrow}{spaces}] {done_count/total:.0%}\n"
+                f"✅ Sent: {sent_count} | ❌ Failed: {failed_count}"
             )
+            if status_msg:
+                text += f"\n{status_msg}"
+            try:
+                await hm.edit(text)
+            except Exception:
+                pass
+
+        async def process_one(idx, data):
+            nonlocal done_count, sent_count, failed_count
+            async with download_semaphore:
+                fname_lower = data["file_name"].lower()
+                file_ext = "." + fname_lower.rsplit(".", 1)[-1] if "." in fname_lower else ""
+                if file_ext not in VIDEO_EXTENSIONS:
+                    done_count += 1
+                    failed_count += 1
+                    return
+
+                if int(data["sizebytes"]) > 524288000 and not is_admin(m.sender_id):
+                    done_count += 1
+                    failed_count += 1
+                    return
+
+                start_time = time.time()
+
+                async def progress_bar(current, total_bytes, state="Downloading"):
+                    if not cansend.can_send() or total_bytes == 0:
+                        return
+                    elapsed = time.time() - start_time
+                    if elapsed < 1:
+                        return
+                    speed = current / elapsed / (1024 * 1024)
+                    remaining = (total_bytes - current) / (current / elapsed) if current > 0 else 0
+                    bar_length = 20
+                    pct = min(current / total_bytes, 1.0)
+                    filled = int(pct * bar_length)
+                    bar = "█" * filled + "░" * (bar_length - filled)
+                    await update_multi_progress(
+                        f"⬇️ `{data['file_name']}`\n"
+                        f"[{bar}] {pct:.0%} | {speed:.1f} MB/s | ETA {convert_seconds(remaining)}"
+                    )
+
+                download = await download_file(
+                    data["direct_link"],
+                    os.path.join(DOWNLOAD_DIR, data["file_name"]),
+                    progress_bar,
+                )
+                if not download:
+                    done_count += 1
+                    failed_count += 1
+                    await update_multi_progress(f"❌ Download failed: `{data['file_name']}`")
+                    return
+
+                file_size = os.path.getsize(download)
+                skip_wm = any(fname_lower.endswith(ext) for ext in [".ts", ".mkv", ".webm", ".flv", ".avi"])
+                wm_limit = 200_000_000
+                if 10240 < file_size < wm_limit and not skip_wm:
+                    await asyncio.get_event_loop().run_in_executor(None, add_watermark, download)
+
+                user_tag = get_custom_tag(m.sender_id)
+                tag_str = f" [{user_tag}]" if user_tag else ""
+                total_time = time.time() - start_time
+                caption = f"""
+┏━━━━━━━━━━⍟
+┃ 𝐍𝐓𝐌 𝐓𝐞𝐫𝐚 𝐁𝐨𝐱 𝐃𝐨𝐰𝐧𝐥𝐨𝐚𝐝𝐞𝐫 𝐁𝐨𝐭
+┗━━━━━━━━━━━━━━━━━⍟
+╔══════════⍟
+╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{data['file_name']}`
+╟➣𝙎𝙞𝙯𝙚: **{escape_markdown(data['size'])}**
+╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}{tag_str}
+╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(user_username or '-')}
+╟➣𝐓𝐨𝐭𝐚𝐥 𝐓𝐢𝐦𝐞 𝐓𝐚𝐤𝐞𝐧: {total_time:.1f} sec
+╚═════════════════⍟
+         @NTMpro
+"""
+
+                vinfo = get_video_info(download)
+                sent_id = None
+                try:
+                    api_res = await send_document_via_api(
+                        TG_API_BASE, BOT_TOKEN, PRIVATE_CHAT_ID, download, caption,
+                        data["file_name"], None,
+                        duration=vinfo.get("duration", 0), width=vinfo.get("width", 0),
+                        height=vinfo.get("height", 0), thumb=vinfo.get("thumbnail"),
+                    )
+                    if api_res.get("ok"):
+                        sent_id = api_res["result"]["message_id"]
+                except Exception:
+                    pass
+
+                if sent_id is None:
+                    try:
+                        file = await bot.send_file(
+                            PRIVATE_CHAT_ID, file=download, caption=caption,
+                            video=True, supports_streaming=True, spoiler=True,
+                        )
+                        sent_id = file.id
+                    except Exception:
+                        pass
+
+                done_count += 1
+                if sent_id:
+                    sent_count += 1
+                    if shorturl:
+                        existing = db.get(shorturl)
+                        if existing:
+                            db.set(shorturl, f"{existing},{sent_id}")
+                        else:
+                            db.set(shorturl, sent_id)
+
+                    fwd_kwargs = dict(
+                        from_peer=PRIVATE_CHAT_ID, id=[sent_id], to_peer=m.chat.id,
+                        drop_author=True, background=True,
+                    )
+                    if m.is_group:
+                        fwd_kwargs["top_msg_id"] = m.id
+                    try:
+                        await bot(ForwardMessagesRequest(**fwd_kwargs))
+                    except Exception:
+                        pass
+
+                    try:
+                        await m.reply(f"✅ `{data['file_name']}` sent!")
+                    except Exception:
+                        pass
+
+                    db.hincrby(STATS_KEY, "total_downloads", 1)
+                else:
+                    failed_count += 1
+                    await update_multi_progress(f"❌ Upload failed: `{data['file_name']}`")
+
+                try:
+                    os.unlink(download)
+                except Exception:
+                    pass
+
+        tasks = [process_one(idx, data) for idx, data in enumerate(files_to_process, start=1)]
+        await asyncio.gather(*tasks)
+
+        try:
+            await hm.edit(
+                f"✅ Complete!\n"
+                f"Sent: {sent_count}/{total} | Failed: {failed_count}"
+            )
+        except Exception:
+            pass
 
 
 
@@ -2671,110 +2774,136 @@ async def folder_download(m: UpdateNewMessage):
         return await hm.edit("Sorry! Could not fetch folder contents.")
 
     if len(files) == 1:
-        # Single file — normal flow
         m.text = url
         return await handle_message(m)
 
-    # Multiple files — download all
     total = len(files)
-    is_premium = is_premium_user(m.sender_id)
-    user_first_name = m.sender.first_name
-    user_username = m.sender.username
-    cansend = CanSend(interval=2)
-
+    cansend = CanSend(interval=3)
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-    sent_ids = []
-    for idx, data in enumerate(files, start=1):
-        fname_lower = data["file_name"].lower()
-        file_ext = "." + fname_lower.rsplit(".", 1)[-1] if "." in fname_lower else ""
-        if file_ext not in VIDEO_EXTENSIONS:
-            await hm.edit(f"({idx}/{total}) Skipping `{data['file_name']}` (unsupported)")
-            continue
+    done_count = 0
+    sent_count = 0
+    failed_count = 0
 
-        start_time = time.time()
-        label = f"({idx}/{total}) "
-
-        async def progress_bar(current_downloaded, total_downloaded, state="Sending"):
-            if not cansend.can_send():
-                return
-            bar_length = 20
-            percent = current_downloaded / total_downloaded
-            arrow = "█" * int(percent * bar_length)
-            spaces = "░" * (bar_length - len(arrow))
-            elapsed_time = time.time() - start_time
-            speed_mbps = (current_downloaded / elapsed_time / (1024 * 1024)) if elapsed_time > 0 else 0
-            try:
-                await hm.edit(
-                    f"{state} {label}`{data['file_name']}`\n"
-                    f"[{arrow + spaces}] {percent:.2%}\n"
-                    f"Speed: **{speed_mbps:.2f} MB/s**"
-                )
-            except Exception:
-                pass
-
-        download = await download_file(
-            data["direct_link"], os.path.join(DOWNLOAD_DIR, data["file_name"]), progress_bar
+    async def update_progress(status_msg=""):
+        nonlocal done_count, sent_count, failed_count
+        if not cansend.can_send():
+            return
+        bar_length = 20
+        filled = int((done_count / total) * bar_length)
+        arrow = "█" * filled
+        spaces = "░" * (bar_length - filled)
+        text = (
+            f"📦 Downloading folder — `{done_count}/{total}` done\n"
+            f"[{arrow}{spaces}] {done_count/total:.0%}\n"
+            f"✅ Sent: {sent_count} | ❌ Failed: {failed_count}"
         )
-        if not download:
-            continue
-
-        # Watermark
-        await asyncio.get_event_loop().run_in_executor(None, add_watermark, download)
-
-        # Custom thumb for premium
-        custom_thumb = get_user_thumbnail(m.sender_id)
-
-        vinfo = get_video_info(download)
-        vduration = vinfo.get("duration", 0)
-        vwidth = vinfo.get("width", 0)
-        vheight = vinfo.get("height", 0)
-        vthumb = custom_thumb or vinfo.get("thumbnail")
-
-        caption = f"📁 `{data['file_name']}` ({data['size']})"
-
-        sent_id = None
+        if status_msg:
+            text += f"\n{status_msg}"
         try:
-            api_res = await send_document_via_api(
-                TG_API_BASE, BOT_TOKEN, PRIVATE_CHAT_ID, download, caption, data["file_name"], progress_bar,
-                duration=vduration, width=vwidth, height=vheight, thumb=vthumb,
-            )
-            if api_res.get("ok"):
-                sent_id = api_res["result"]["message_id"]
+            await hm.edit(text)
         except Exception:
             pass
 
-        if sent_id is None:
-            try:
-                file = await bot.send_file(
-                    PRIVATE_CHAT_ID, file=download,
-                    caption=caption, video=True, supports_streaming=True,
-                    duration=vduration, spoiler=True,
+    async def process_file(idx, data):
+        nonlocal done_count, sent_count, failed_count
+        async with download_semaphore:
+            fname_lower = data["file_name"].lower()
+            file_ext = "." + fname_lower.rsplit(".", 1)[-1] if "." in fname_lower else ""
+            if file_ext not in VIDEO_EXTENSIONS:
+                done_count += 1
+                failed_count += 1
+                await update_progress(f"⏭ Skipping `{data['file_name']}` (unsupported)")
+                return
+
+            start_time = time.time()
+
+            async def progress_bar(current, total_bytes, state="Downloading"):
+                if not cansend.can_send() or total_bytes == 0:
+                    return
+                elapsed = time.time() - start_time
+                if elapsed < 1:
+                    return
+                speed = current / elapsed / (1024 * 1024)
+                remaining = (total_bytes - current) / (current / elapsed) if current > 0 else 0
+                bar_length = 20
+                pct = min(current / total_bytes, 1.0)
+                filled = int(pct * bar_length)
+                bar = "█" * filled + "░" * (bar_length - filled)
+                await update_progress(
+                    f"⬇️ `{data['file_name']}`\n"
+                    f"[{bar}] {pct:.0%} | {speed:.1f} MB/s | ETA {convert_seconds(remaining)}"
                 )
-                sent_id = file.id
-            except Exception:
-                pass
 
-        if sent_id:
-            sent_ids.append(sent_id)
-            # Forward to user
+            download = await download_file(
+                data["direct_link"],
+                os.path.join(DOWNLOAD_DIR, data["file_name"]),
+                progress_bar,
+            )
+            if not download:
+                done_count += 1
+                failed_count += 1
+                await update_progress(f"❌ Download failed: `{data['file_name']}`")
+                return
+
+            wm_limit = 200_000_000
+            file_size = os.path.getsize(download)
+            skip_wm = any(fname_lower.endswith(ext) for ext in [".ts", ".mkv", ".webm", ".flv", ".avi"])
+            if 10240 < file_size < wm_limit and not skip_wm:
+                await asyncio.get_event_loop().run_in_executor(None, add_watermark, download)
+
+            vinfo = get_video_info(download)
+            caption = f"📁 `{data['file_name']}` ({data['size']})"
+
+            sent_id = None
             try:
-                await bot(ForwardMessagesRequest(
-                    from_peer=PRIVATE_CHAT_ID,
-                    id=[sent_id],
-                    to_peer=m.chat.id,
-                    drop_author=True,
-                    background=True,
-                ))
+                api_res = await send_document_via_api(
+                    TG_API_BASE, BOT_TOKEN, PRIVATE_CHAT_ID, download, caption, data["file_name"], None,
+                    duration=vinfo.get("duration", 0), width=vinfo.get("width", 0),
+                    height=vinfo.get("height", 0), thumb=vinfo.get("thumbnail"),
+                )
+                if api_res.get("ok"):
+                    sent_id = api_res["result"]["message_id"]
             except Exception:
                 pass
 
-        try:
-            os.unlink(download)
-        except Exception:
-            pass
+            if sent_id is None:
+                try:
+                    file = await bot.send_file(
+                        PRIVATE_CHAT_ID, file=download, caption=caption,
+                        video=True, supports_streaming=True, spoiler=True,
+                    )
+                    sent_id = file.id
+                except Exception:
+                    pass
 
-    await hm.edit(f"✅ Folder complete! Sent {len(sent_ids)}/{total} files.")
+            done_count += 1
+            if sent_id:
+                sent_count += 1
+                try:
+                    await bot(ForwardMessagesRequest(
+                        from_peer=PRIVATE_CHAT_ID, id=[sent_id],
+                        to_peer=m.chat.id, drop_author=True, background=True,
+                    ))
+                except Exception:
+                    pass
+                await update_progress(f"✅ Sent `{data['file_name']}`")
+            else:
+                failed_count += 1
+                await update_progress(f"❌ Upload failed: `{data['file_name']}`")
+
+            try:
+                os.unlink(download)
+            except Exception:
+                pass
+
+    tasks = [process_file(idx, data) for idx, data in enumerate(files, start=1)]
+    await asyncio.gather(*tasks)
+
+    await hm.edit(
+        f"✅ Folder complete!\n"
+        f"Sent: {sent_count}/{total} | Failed: {failed_count}"
+    )
 
 
 # ==================== BAN SYSTEM ====================
