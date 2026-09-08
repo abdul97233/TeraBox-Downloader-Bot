@@ -482,13 +482,12 @@ async def download_file(
             try:
                 async with session:
                     async with session.get(url, timeout=timeout) as response:
-                        if response.status >= 500:
+                        if response.status != 200:
                             log.info(f"HTTP {response.status} on attempt {attempt}/{retries}: {url}")
                             if attempt < retries:
                                 await asyncio.sleep(3 * attempt)
                                 continue
                             return False
-                        response.raise_for_status()
                         total = int(response.headers.get("Content-Length", 0))
                         downloaded = 0
                         if total > 0:
@@ -500,7 +499,11 @@ async def download_file(
                                 downloaded += len(chunk)
                                 if callback:
                                     await callback(downloaded, total, "Downloading")
-            except Exception:
+            except aiohttp.ClientError:
+                if attempt < retries:
+                    log.info(f"Connection error on attempt {attempt}/{retries}: {url}")
+                    await asyncio.sleep(3 * attempt)
+                    continue
                 raise
 
             # Verify download is complete
