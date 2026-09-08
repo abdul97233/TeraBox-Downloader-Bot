@@ -453,63 +453,82 @@ async def download_file(
     url: str,
     filename: str,
     callback=None,
+    retries: int = 3,
 ) -> str | bool:
-    try:
-        timeout = aiohttp.ClientTimeout(total=3600, connect=15, sock_read=60)
-        connector = aiohttp.TCPConnector(
-            limit=10, force_close=False,
-            ttl_dns_cache=300, keepalive_timeout=60,
-            enable_cleanup_closed=True,
-        )
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-            "Accept": "*/*",
-            "Accept-Encoding": "identity",
-            "Connection": "keep-alive",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Referer": "https://terabox.com/",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "cross-site",
-            "Upgrade-Insecure-Requests": "1",
-            "sec-ch-ua": '"Chromium";v="125", "Google Chrome";v="125"',
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"Windows"',
-        }
-        session = aiohttp.ClientSession(connector=connector, headers=headers)
+    for attempt in range(1, retries + 1):
         try:
-            async with session:
-                async with session.get(url, timeout=timeout) as response:
-                    response.raise_for_status()
-                    total = int(response.headers.get("Content-Length", 0))
-                    downloaded = 0
-                    if total > 0:
-                        with open(filename, "wb") as f:
-                            f.truncate(total)
-                    with open(filename, "r+b" if total > 0 else "wb") as file:
-                        async for chunk in response.content.iter_chunked(2097152):
-                            file.write(chunk)
-                            downloaded += len(chunk)
-                            if callback:
-                                await callback(downloaded, total, "Downloading")
-        except Exception:
-            raise
+            timeout = aiohttp.ClientTimeout(total=3600, connect=15, sock_read=60)
+            connector = aiohttp.TCPConnector(
+                limit=10, force_close=False,
+                ttl_dns_cache=300, keepalive_timeout=60,
+                enable_cleanup_closed=True,
+            )
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                "Accept": "*/*",
+                "Accept-Encoding": "identity",
+                "Connection": "keep-alive",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": "https://terabox.com/",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "cross-site",
+                "Upgrade-Insecure-Requests": "1",
+                "sec-ch-ua": '"Chromium";v="125", "Google Chrome";v="125"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Windows"',
+            }
+            session = aiohttp.ClientSession(connector=connector, headers=headers)
+            try:
+                async with session:
+                    async with session.get(url, timeout=timeout) as response:
+                        if response.status >= 500:
+                            log.info(f"HTTP {response.status} on attempt {attempt}/{retries}: {url}")
+                            if attempt < retries:
+                                await asyncio.sleep(3 * attempt)
+                                continue
+                            return False
+                        response.raise_for_status()
+                        total = int(response.headers.get("Content-Length", 0))
+                        downloaded = 0
+                        if total > 0:
+                            with open(filename, "wb") as f:
+                                f.truncate(total)
+                        with open(filename, "r+b" if total > 0 else "wb") as file:
+                            async for chunk in response.content.iter_chunked(2097152):
+                                file.write(chunk)
+                                downloaded += len(chunk)
+                                if callback:
+                                    await callback(downloaded, total, "Downloading")
+            except Exception:
+                raise
 
-        # Verify download is complete
-        if total > 0 and os.path.isfile(filename):
-            actual = os.path.getsize(filename)
-            if actual < total:
-                log.info(f"Incomplete download: {actual}/{total} bytes")
-                return False
+            # Verify download is complete
+            if total > 0 and os.path.isfile(filename):
+                actual = os.path.getsize(filename)
+                if actual < total:
+                    log.info(f"Incomplete download: {actual}/{total} bytes")
+                    if attempt < retries:
+                        await asyncio.sleep(2)
+                        continue
+                    return False
 
-        return filename
+            return filename
 
-    except asyncio.TimeoutError:
-        log.info(f"Download timeout for {url}")
-        return False
-    except Exception as e:
-        log.info(f"Error downloading file: {e}")
-        return False
+        except asyncio.TimeoutError:
+            log.info(f"Download timeout on attempt {attempt}/{retries}: {url}")
+            if attempt < retries:
+                await asyncio.sleep(2)
+                continue
+            return False
+        except Exception as e:
+            log.info(f"Error downloading file on attempt {attempt}/{retries}: {e}")
+            if attempt < retries:
+                await asyncio.sleep(2)
+                continue
+            return False
+
+    return False
 
 
 def download_image_to_bytesio(url: str, filename: str) -> BytesIO | None:
