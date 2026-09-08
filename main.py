@@ -2079,6 +2079,7 @@ async def handle_message(m: Message):
         done_count = 0
         sent_count = 0
         failed_count = 0
+        edit_lock = asyncio.Lock()
 
         async def update_multi_progress(status_msg=""):
             nonlocal done_count, sent_count, failed_count
@@ -2095,10 +2096,11 @@ async def handle_message(m: Message):
             )
             if status_msg:
                 text += f"\n{status_msg}"
-            try:
-                await hm.edit(text)
-            except Exception:
-                pass
+            async with edit_lock:
+                try:
+                    await hm.edit(text)
+                except Exception:
+                    pass
 
         async def process_one(idx, data):
             nonlocal done_count, sent_count, failed_count
@@ -2110,7 +2112,7 @@ async def handle_message(m: Message):
                     failed_count += 1
                     return
 
-                if int(data["sizebytes"]) > 524288000 and not is_admin(m.sender_id):
+                if int(data["sizebytes"]) > 524288000 and not is_admin(m.sender_id) and not is_premium:
                     done_count += 1
                     failed_count += 1
                     return
@@ -2827,6 +2829,7 @@ async def folder_download(m: UpdateNewMessage):
     done_count = 0
     sent_count = 0
     failed_count = 0
+    edit_lock = asyncio.Lock()
 
     async def update_progress(status_msg=""):
         nonlocal done_count, sent_count, failed_count
@@ -2843,10 +2846,11 @@ async def folder_download(m: UpdateNewMessage):
         )
         if status_msg:
             text += f"\n{status_msg}"
-        try:
-            await hm.edit(text)
-        except Exception:
-            pass
+        async with edit_lock:
+            try:
+                await hm.edit(text)
+            except Exception:
+                pass
 
     async def process_file(idx, data):
         nonlocal done_count, sent_count, failed_count
