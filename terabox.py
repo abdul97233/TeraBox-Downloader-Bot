@@ -64,6 +64,7 @@ def check_url_patterns(url):
 def get_urls_from_string(string: str) -> list[str]:
     pattern = r"(https?://\S+)"
     urls = re.findall(pattern, string)
+    urls = [url.rstrip(").,;:!?") for url in urls]
     urls = [url for url in urls if check_url_patterns(url)]
     if not urls:
         return []

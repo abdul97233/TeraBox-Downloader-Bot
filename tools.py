@@ -463,7 +463,7 @@ async def download_file(
         if total > 0 and os.path.isfile(filename):
             actual = os.path.getsize(filename)
             if actual < total:
-                log.info(f"Incomplete download: {actual}/{total} bytes", flush=True)
+                log.info(f"Incomplete download: {actual}/{total} bytes")
                 return False
 
         return filename
