@@ -1811,9 +1811,9 @@ async def handle_message(m: Message):
     files_to_process = files if is_premium else files[:1]
     total = len(files_to_process)
 
-    # Cached forwarding — works for both free and premium users
+    # Cached forwarding — only for single-file links
     fileid = db.get(shorturl)
-    if fileid:
+    if fileid and total == 1:
         try:
             ids = [int(x) for x in str(fileid).split(",")]
             cached_msgs = await bot.get_messages(PRIVATE_CHAT_ID, ids=ids)
