@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import time
+import datetime
 from uuid import uuid4
 
 import redis
@@ -142,19 +143,28 @@ def get_all_premium_users():
 
 
 def get_custom_tag(user_id):
-    """Get custom tag for a user. Auto-sets owner/admin tags."""
+    """Get custom tag for a user. Auto-sets owner/admin tags.
+    Auto-removes tag if premium expired."""
     uid = str(user_id)
-    # Auto-tag owner
+    is_prem = is_premium_user(user_id)
+    
+    # Auto-tag owner (always has tag)
     if user_id == OWNER_ID:
         tag = db.hget(CUSTOM_TAGS_KEY, uid) or "OWNER"
         db.hset(CUSTOM_TAGS_KEY, uid, tag)
         return tag
-    # Auto-tag admins
+    # Auto-tag admins (always has tag)
     if is_admin(user_id):
         tag = db.hget(CUSTOM_TAGS_KEY, uid) or "ADMIN"
         db.hset(CUSTOM_TAGS_KEY, uid, tag)
         return tag
-    return db.hget(CUSTOM_TAGS_KEY, uid) or ""
+    # For regular users: if premium expired, remove tag
+    if not is_prem:
+        db.hdel(CUSTOM_TAGS_KEY, uid)
+        return ""
+    # Regular premium user: return their tag
+    tag = db.hget(CUSTOM_TAGS_KEY, uid)
+    return tag if tag else ""
 
 
 def set_custom_tag(user_id, tag):
@@ -2302,6 +2312,73 @@ async def clean_downloads(m: UpdateNewMessage):
             f"Cleaned **{deleted}** file(s) and freed **{get_formatted_size(total_size)}** of storage."
         )
     return await m.reply("Could not delete any files. Check permissions.")
+
+# ---- User status panel ----
+# ==================== USER STATUS ====================
+
+
+async def get_user_stats(user_id: int) -> dict:
+    """Get download stats for a user from Redis."""
+    try:
+        key = f"user_stats_{user_id}"
+        data = db.hgetall(key)
+        if data:
+            return {
+                "downloads": int(data.get("total", 0)),
+                "storage": int(data.get("storage", 0)),
+                "last_activity": data.get("last_activity", "Never"),
+            }
+    except Exception:
+        pass
+    return {"downloads": 0, "storage": 0, "last_activity": "Never"}
+
+
+@bot.on(
+    events.NewMessage(
+        pattern=r"/mystatus",
+        incoming=True,
+        outgoing=False,
+    )
+)
+async def mystatus(m: UpdateNewMessage):
+    """Show user's premium status, tags, and download stats."""
+    user_id = m.sender_id
+    is_premium = is_premium_user(user_id)
+    user_tag = get_custom_tag(user_id)
+    user_first_name = m.sender.first_name
+    user_username = m.sender.username or "-"
+
+    # Get download stats
+    stats = await get_user_stats(user_id)
+    downloads = stats["downloads"]
+    storage = get_formatted_size(stats["storage"])
+    last_activity = stats["last_activity"]
+
+    # Premium expiry info
+    premium_expiry = db.hget(PREMIUM_EXPIRY_KEY, str(user_id))
+    if premium_expiry:
+        try:
+            expiry = datetime.fromtimestamp(float(premium_expiry))
+            days_left = (expiry - datetime.now()).days
+            premium_status = f"🟡 Premium expires in {max(days_left, 0)} days"
+        except Exception:
+            premium_status = "🟡 Premium active (no expiry set)"
+    else:
+        premium_status = "🆓 Free user"
+
+    # Tag info
+    tag_info = f"🏷 Tag: **{user_tag}**" if user_tag else "🏷 No custom tag"
+
+    await m.reply(
+        f"**👤 Your Status**\n\n"
+        f"💰 **Premium:** {premium_status}\n"
+        f"{tag_info}\n"
+        f"📊 **Download Stats:**\n"
+        f"• Total downloads: **{downloads}**\n"
+        f"• Total storage: **{storage}**\n"
+        f"• Last activity: **{last_activity}**\n\n"
+        f"💡 Use /plan to check premium plans, /tag to manage your tag."
+    )
 
 
 # ---- Background cleanup task: auto-delete downloads older than 1 hour ----
