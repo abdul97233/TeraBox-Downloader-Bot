@@ -1936,20 +1936,20 @@ async def handle_message(m: Message):
         wm_limit = 500_000_000 if not is_premium else 200_000_000
         if 10240 < file_size < wm_limit and not skip_wm:
             try:
+                await hm.edit(f"✅ Downloaded `{data['file_name']}` — adding watermark...")
                 await asyncio.wait_for(
                     asyncio.get_event_loop().run_in_executor(None, add_watermark, download),
                     timeout=120,
                 )
-            except asyncio.TimeoutError:
-                log.info(f"Watermark timed out for: {data['file_name']}")
-            except Exception as e:
-                log.info(f"Watermark error: {e}")
+            except (asyncio.TimeoutError, Exception):
+                log.info(f"Watermark skipped/failed for: {data['file_name']}")
 
         dl_quality = getattr(m, '_dl_quality', None)
         if dl_quality and dl_quality in DL_QUALITY_MAP:
             height, crf = DL_QUALITY_MAP[dl_quality]
             compressed_path = download + f".{dl_quality}.mp4"
             try:
+                await hm.edit(f"✅ Downloaded `{data['file_name']}` — compressing to {dl_quality}...")
                 cmd = [
                     "ffmpeg", "-y", "-i", download,
                     "-vf", f"scale=-2:{height}",
@@ -1957,7 +1957,7 @@ async def handle_message(m: Message):
                     "-preset", "fast", "-c:a", "aac", "-b:a", "128k",
                     compressed_path,
                 ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
                 if result.returncode == 0 and os.path.isfile(compressed_path):
                     os.replace(compressed_path, download)
             except Exception as e:
@@ -1967,6 +1967,24 @@ async def handle_message(m: Message):
 
         user_tag = get_custom_tag(m.sender_id)
         tag_str = f" ({user_tag})" if user_tag else ""
+
+        # Format total time nicely
+        total_time_str = f"{total_time:.1f}s"
+
+        # Get video info (with fallback for thumbnail/duration)
+        try:
+            vinfo = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(None, get_video_info, download),
+                timeout=15,
+            )
+        except (asyncio.TimeoutError, Exception):
+            vinfo = {"duration": 0, "width": 0, "height": 0, "thumbnail": None}
+        vduration = vinfo.get("duration", 0)
+        vwidth = vinfo.get("width", 0)
+        vheight = vinfo.get("height", 0)
+        vthumb = vinfo.get("thumbnail")
+        if vthumb and not thumbnail:
+            thumbnail = download_image_to_bytesio(vthumb, "thumb.jpg")
 
         caption = f"""
 ┏━━━━━━━━━━⍟
@@ -1978,24 +1996,10 @@ async def handle_message(m: Message):
 ╟➣𝗗𝗶𝗿𝗲𝗰𝘁 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱 𝗟𝗶𝗻𝗸 : [Click here]({data['direct_link']})
 ╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}{tag_str}
 ╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(user_username or '-')}
-╟➣𝐓𝐨𝐭𝐚𝐥 𝐓𝐢𝐦𝐞 𝐓𝐚𝐤𝐞𝐧: {total_time} sec
+╟➣𝐓𝐨𝐭𝐚𝐥 𝐓𝐢𝐦𝐞 𝐓𝐚𝐤𝐞𝐧: {total_time_str}
 ╚═════════════════⍟
          @NTMpro
 """
-
-        try:
-            vinfo = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(None, get_video_info, download),
-                timeout=30,
-            )
-        except (asyncio.TimeoutError, Exception):
-            vinfo = {"duration": 0, "width": 0, "height": 0, "thumbnail": None}
-        vduration = vinfo.get("duration", 0)
-        vwidth = vinfo.get("width", 0)
-        vheight = vinfo.get("height", 0)
-        vthumb = vinfo.get("thumbnail")
-        if vthumb and not thumbnail:
-            thumbnail = download_image_to_bytesio(vthumb, "thumb.jpg")
 
         sent_id = None
         try:
