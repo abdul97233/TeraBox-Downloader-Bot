@@ -42,6 +42,20 @@ VIDEO_EXTENSIONS = (
 )
 
 WATERMARK_TEXT = "@TERA_NTM_BOT"
+
+
+def set_watermark_text(text):
+    """Live-update the watermark text (used by /configset)."""
+    global WATERMARK_TEXT
+    text = str(text or "").strip()
+    if not text or len(text) > 40 or "'" in text or "\n" in text:
+        raise ValueError("Watermark must be 1-40 chars, no quotes/newlines.")
+    WATERMARK_TEXT = text
+    return WATERMARK_TEXT
+
+
+def get_watermark_text():
+    return WATERMARK_TEXT
 FFMPEG_PATH = shutil.which("ffmpeg")
 BUNDLE_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(BUNDLE_DIR, "font.ttf")

@@ -760,69 +760,32 @@ async def gctrack_cb(e):
     )
 )
 async def redeem_gc(m: UpdateNewMessage):
-    code = m.pattern_match.group(1).upper()
-    user_id = m.sender_id
-
-    # Check if user already redeemed AND still has active premium
-    if db.get(f"gc_redeemed_{user_id}") and is_premium_user(user_id):
-        return await m.reply(
-            "You have already redeemed a gift card and your premium is still active.\n"
-            "Each user can only redeem **1 gift card** while premium is active.\n"
-            "Wait for expiry or contact admin."
-        )
-
-    days_str = db.hget(GC_REDIS_KEY, code)
-
-    if not days_str:
-        return await m.reply("Invalid or already used gift card.")
-
-    days = int(days_str)
-    # Get tag before deleting
-    tag = db.hget(GC_TAGS_KEY, code) or ""
-    db.hdel(GC_REDIS_KEY, code)
-    db.hdel(GC_TAGS_KEY, code)
-    # Track who used this code
-    db.hset(GC_USED_KEY, code, f"{user_id}:{int(time.time())}:{days}")
-    # Mark user as having redeemed a gift card (permanent record)
-    db.set(f"gc_redeemed_{user_id}", "1")
-
-    # Apply tag if gift card had one
-    if tag:
-        set_custom_tag(user_id, tag)
-
-    tag_info = f"\nTag: **{tag}**" if tag else ""
-
-    if days == 0:
-        grant_premium(user_id, 99999)
-        await m.reply(
-            f"Gift card redeemed!\n\n"
-            f"**Premium: Unlimited**\n"
-            f"Duration: Permanent (never expires){tag_info}",
-            parse_mode="markdown",
-        )
-    else:
-        grant_premium(user_id, days)
-        import time as _time
-        from datetime import datetime
-        expiry = int(_time.time()) + (days * 86400)
-        expiry_str = datetime.fromtimestamp(expiry).strftime("%d %b %Y, %I:%M %p")
-        await m.reply(
-            f"Gift card redeemed!\n\n"
-            f"**Premium: {days} day(s)**\n"
-            f"Expires: `{expiry_str}`{tag_info}",
-            parse_mode="markdown",
-        )
-
+    from commands.redeem_core import redeem_code as _core
+    ok, text, info = await _core(
+        db=db, gc_key=GC_REDIS_KEY, gc_tags_key=GC_TAGS_KEY, gc_used_key=GC_USED_KEY,
+        code=m.pattern_match.group(1), user_id=m.sender_id,
+        grant_premium_fn=grant_premium, set_tag_fn=set_custom_tag,
+        is_premium_fn=is_premium_user,
+    )
+    await m.reply(text, parse_mode="markdown")
+    if not (ok and info):
+        return
     # Notify admins
-    user = await bot.get_entity(m.sender_id)
-    name = user.first_name
-    username = user.username if user.username else "-"
-    tag_msg = f"\nTag: {tag}" if tag else ""
+    try:
+        user = await bot.get_entity(m.sender_id)
+        name = user.first_name
+        username = user.username if user.username else "-"
+    except Exception:
+        name, username = "-", "-"
+    tag_msg = f"\nTag: {info['tag']}" if info.get("tag") else ""
     for admin_id in get_all_admins():
-        await bot.send_message(
-            admin_id,
-            f"Gift Card Redeemed!\nUser: {name} (@{username})\nID: `{m.sender_id}`\nCode: `{code}`\nDuration: {days}d{tag_msg}"
-        )
+        try:
+            await bot.send_message(
+                admin_id,
+                f"Gift Card Redeemed!\nUser: {name} (@{username})\nID: `{m.sender_id}`\nCode: `{info['code']}`\nDuration: {info['days']}d{tag_msg}"
+            )
+        except Exception:
+            pass
 
 
 # ==================== /allowredeem — OWNER RESETS USER GC REDEMPTION ====================
@@ -1604,7 +1567,7 @@ async def cb_admin_config(e):
     try:
         from commands.config_editor import build_config_view_text
         text = "**Runtime Config**\n\n" + build_config_view_text(_get_runtime())
-        text += "\n\nEdit: `/configview`, `/configset <KEY> <VALUE>`"
+        text += "\n\nEdit: `/configset <KEY> <VALUE>` · Reset: `/configreset <KEY>`"
     except Exception as ex:
         text = f"Config view failed: `{ex}`"
     buttons = [[Button.inline("◀️ Back", data="menu_admin")]]
@@ -2754,6 +2717,7 @@ async def admin_commands(m: UpdateNewMessage):
 /logrotate — Rotate bot.log now (auto daily)
 /configview — View runtime config
 /configset `<KEY>` `<VALUE>` — Edit runtime config
+/configreset `<KEY>` — Reset key to default
 /setapi `<primary|fallback>` `<template>` — Rotate API live
 /reloadconfig — Reload API templates
 /backup — Backup Redis data
@@ -3899,55 +3863,131 @@ try:
 except Exception as e:
     log.warning(f"maintenance pack not loaded: {e}")
 
+async def _redeem_for(_uid, _code):
+    from commands.redeem_core import redeem_code as _core
+    return await _core(
+        db=db, gc_key=GC_REDIS_KEY, gc_tags_key=GC_TAGS_KEY, gc_used_key=GC_USED_KEY,
+        code=_code, user_id=_uid,
+        grant_premium_fn=grant_premium, set_tag_fn=set_custom_tag,
+        is_premium_fn=is_premium_user,
+    )
+
+async def _notify_redeem(_uid, _info):
+    try:
+        user = await bot.get_entity(int(_uid))
+        name = user.first_name
+        username = user.username if user.username else "-"
+    except Exception:
+        name, username = "-", "-"
+    tag_msg = f"\nTag: {_info.get('tag')}" if _info.get("tag") else ""
+    for admin_id in get_all_admins():
+        try:
+            await bot.send_message(
+                admin_id,
+                f"Gift Card Redeemed!\nUser: {name} (@{username})\nID: `{_uid}`\nCode: `{_info.get('code')}`\nDuration: {_info.get('days')}d{tag_msg}"
+            )
+        except Exception:
+            pass
+
 try:
     from commands.ux import register as _reg_ux
     _reg_ux(bot, {
         "db": db, "is_admin": is_admin, "OWNER_ID": OWNER_ID,
         "get_files": get_files, "download_single": handle_message,
         "get_all_users": lambda: db.smembers("all_known_users"),
+        "redeem_code_fn": _redeem_for, "notify_redeem": _notify_redeem,
     })
 except Exception as e:
     log.warning(f"ux pack not loaded: {e}")
 
 # ---- Runtime config overrides (persisted in Redis, applied on boot) ----
-_CONFIG_EDITABLE = {"MAX_FILES_PER_REQUEST": (1, 50), "DOWNLOAD_COOLDOWN_SECONDS": (0, 300), "PARALLEL_DOWNLOADS": (1, 10)}
-
-def _get_runtime():
-    return {k: globals().get(k) for k in _CONFIG_EDITABLE}
-
-def _set_runtime(key, value):
-    key = str(key).upper()
-    if key not in _CONFIG_EDITABLE:
-        return False, "Unknown key."
-    lo, hi = _CONFIG_EDITABLE[key]
-    try:
-        v = int(value)
-    except Exception:
-        return False, "Must be an integer."
-    if not (lo <= v <= hi):
-        return False, f"Range {lo}-{hi}."
-    if key == "PARALLEL_DOWNLOADS":
-        global download_semaphore
-        download_semaphore = asyncio.Semaphore(v)
-    globals()[key] = v
-    return True, "ok"
-
+# Specs live in commands/config_editor.py (single source of truth).
 try:
-    _saved_cfg = db.hgetall("config_overrides") or {}
-    for _k, _v in _saved_cfg.items():
+    from commands.config_editor import SPECS as _CFG_SPECS
+    from commands.config_editor import validate_config_value as _cfg_validate
+
+    def _get_runtime():
+        rt = {}
         try:
-            _set_runtime(_k, int(_v))
+            import tools as _tools
+            rt["WATERMARK_TEXT"] = _tools.get_watermark_text()
         except Exception:
             pass
-except Exception as e:
-    log.warning(f"config overrides not applied: {e}")
+        for _k in _CFG_SPECS:
+            if _k == "WATERMARK_TEXT":
+                continue
+            rt[_k] = globals().get(_k)
+        return rt
 
-try:
-    from commands.config_editor import register as _reg_cfg
-    _reg_cfg(bot, {"db": db, "is_admin": is_admin, "log_audit": log_audit,
-                   "get_runtime": _get_runtime, "set_runtime": _set_runtime})
+    def _apply_special(_key, _v):
+        if _key == "PARALLEL_DOWNLOADS":
+            global download_semaphore
+            download_semaphore = asyncio.Semaphore(_v)
+        elif _key == "DOWNLOAD_DIR":
+            os.makedirs(_v, exist_ok=True)
+        elif _key == "WATERMARK_TEXT":
+            import tools as _tools
+            _tools.set_watermark_text(_v)
+
+    def _set_runtime(key, value):
+        ok, v, err = _cfg_validate(key, value() if callable(value) else value)
+        if not ok:
+            return False, err
+        key = str(key).strip().upper()
+        try:
+            _apply_special(key, v)
+        except Exception as e:
+            return False, f"Apply failed: `{e}`"
+        if key != "WATERMARK_TEXT":
+            globals()[key] = v
+        return True, "ok"
+
+    def _reset_runtime(key):
+        key = str(key).strip().upper()
+        if key not in _CFG_SPECS:
+            return False, "Unknown key."
+        default = _CONFIG_DEFAULTS.get(key)
+        if default is None:
+            return False, "No default recorded."
+        try:
+            _apply_special(key, default if not isinstance(default, list) else list(default))
+        except Exception as e:
+            return False, f"Apply failed: `{e}`"
+        if key != "WATERMARK_TEXT":
+            globals()[key] = default if not isinstance(default, list) else list(default)
+        return True, str(default if not isinstance(default, list) else ", ".join(default))
+
+    _CONFIG_DEFAULTS = {}
+    try:
+        import tools as _tools_def
+        _CONFIG_DEFAULTS["WATERMARK_TEXT"] = _tools_def.get_watermark_text()
+    except Exception:
+        pass
+    for _k in _CFG_SPECS:
+        if _k == "WATERMARK_TEXT":
+            continue
+        _v0 = globals().get(_k)
+        _CONFIG_DEFAULTS[_k] = list(_v0) if isinstance(_v0, list) else _v0
+
+    try:
+        _saved_cfg = db.hgetall("config_overrides") or {}
+        for _k, _v in _saved_cfg.items():
+            try:
+                _set_runtime(_k, _v)
+            except Exception:
+                pass
+    except Exception as e:
+        log.warning(f"config overrides not applied: {e}")
+
+    try:
+        from commands.config_editor import register as _reg_cfg
+        _reg_cfg(bot, {"db": db, "is_admin": is_admin, "log_audit": log_audit,
+                       "get_runtime": _get_runtime, "set_runtime": _set_runtime,
+                       "reset_runtime": _reset_runtime})
+    except Exception as e:
+        log.warning(f"config editor pack not loaded: {e}")
 except Exception as e:
-    log.warning(f"config editor pack not loaded: {e}")
+    log.warning(f"advanced config editor unavailable: {e}")
 
 try:
     from commands.maintenance import start_auto_rotate as _ar

@@ -104,19 +104,52 @@ def _ctx(ctx, key, default=None):
     return getattr(ctx, key, default)
 
 
-async def _answer_redeem_button(e):
-    """One-click gift-card button tapped: hand the user a copyable /redeem command."""
+async def _auto_redeem_button(e, bot, ctx):
+    """One-click gift-card button tapped: redeem immediately for the tapper.
+
+    Confirms via DM (no thread spam). Falls back to a reply only if DM fails.
+    """
     try:
         code = e.data.decode(errors="ignore").split("redeem_", 1)[1].strip().upper()
     except Exception:
         code = ""
+    if not code:
+        try:
+            await e.answer("Invalid code.", alert=True)
+        except Exception:
+            pass
+        return
+    redeem_fn = ctx.get("redeem_code_fn") if isinstance(ctx, dict) else getattr(ctx, "redeem_code_fn", None)
+    if redeem_fn is None:
+        try:
+            await e.answer("Redeem unavailable.", alert=True)
+        except Exception:
+            pass
+        return
     try:
-        await e.answer("Copy the redeem command below", alert=False)
+        ok, text, info = await redeem_fn(int(e.sender_id), code)
+    except Exception as ex:
+        try:
+            await e.answer(f"Failed: {ex}", alert=True)
+        except Exception:
+            pass
+        return
+    try:
+        await e.answer("Redeemed!" if ok else "Failed", alert=False)
     except Exception:
         pass
-    if code:
+    if ok and info:
         try:
-            await e.reply(f"Redeem with:\n`/redeem {code}`")
+            notify = ctx.get("notify_redeem") if isinstance(ctx, dict) else getattr(ctx, "notify_redeem", None)
+            if callable(notify):
+                await notify(int(e.sender_id), info)
+        except Exception:
+            pass
+    try:
+        await bot.send_message(int(e.sender_id), text, parse_mode="markdown")
+    except Exception:
+        try:
+            await e.reply(text)
         except Exception:
             pass
 
@@ -162,7 +195,7 @@ def register(bot, ctx):
 
     @bot.on(events.CallbackQuery(pattern=rb"redeem_"))
     async def _redeem_btn(e):
-        await _answer_redeem_button(e)
+        await _auto_redeem_button(e, bot, ctx)
 
     @bot.on(events.NewMessage(pattern="/broadcast", incoming=True, outgoing=False))
     async def _broadcast(m):
