@@ -3788,6 +3788,66 @@ async def list_admins(m: UpdateNewMessage):
     )
 
 
+# ---- Modular command packs (multi-file layout; never break boot) ----
+try:
+    from commands.admin_users import register as _reg_admin_users
+    _reg_admin_users(bot, {
+        "db": db, "is_admin": is_admin, "is_premium_user": is_premium_user,
+        "grant_premium": grant_premium, "revoke_premium": revoke_premium,
+        "set_custom_tag": set_custom_tag,
+        "clear_tag": lambda uid: db.hdel(CUSTOM_TAGS_KEY, str(uid)),
+        "get_custom_tag": get_custom_tag, "OWNER_ID": OWNER_ID,
+    })
+except Exception as e:
+    log.warning(f"admin_users pack not loaded: {e}")
+
+try:
+    from commands.analytics import register as _reg_analytics, track_download as _track_dl
+    _reg_analytics(bot, {
+        "db": db, "is_admin": is_admin, "get_formatted_size": get_formatted_size,
+        "api_templates": {"primary": TERABOX_API_TEMPLATE, "fallback": TERABOX_FALLBACK_API_TEMPLATE},
+        "log_path": LOG_FILE,
+    })
+except Exception as e:
+    log.warning(f"analytics pack not loaded: {e}")
+    _track_dl = None
+
+def _apply_api_templates(primary=None, fallback=None):
+    import terabox as _tb
+    if primary:
+        _tb.TERABOX_API_TEMPLATE = primary
+        try:
+            db.set("api_template:primary", primary)
+        except Exception:
+            pass
+    if fallback:
+        _tb.TERABOX_FALLBACK_API_TEMPLATE = fallback
+        try:
+            db.set("api_template:fallback", fallback)
+        except Exception:
+            pass
+    return {"primary": _tb.TERABOX_API_TEMPLATE, "fallback": _tb.TERABOX_FALLBACK_API_TEMPLATE}
+
+try:
+    from commands.maintenance import register as _reg_maint
+    _reg_maint(bot, {
+        "db": db, "is_admin": is_admin, "log_audit": log_audit,
+        "maintenance_key": MAINTENANCE_KEY, "log_file": LOG_FILE,
+        "apply_api_templates": _apply_api_templates,
+    })
+except Exception as e:
+    log.warning(f"maintenance pack not loaded: {e}")
+
+try:
+    from commands.ux import register as _reg_ux
+    _reg_ux(bot, {
+        "db": db, "is_admin": is_admin, "OWNER_ID": OWNER_ID,
+        "get_files": get_files, "download_single": handle_message,
+        "get_all_users": lambda: db.smembers("all_known_users"),
+    })
+except Exception as e:
+    log.warning(f"ux pack not loaded: {e}")
+
 # Start the cleanup task before running the bot
 cleanup_task = bot.loop.create_task(auto_cleanup_downloads())
 
