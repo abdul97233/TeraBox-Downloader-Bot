@@ -126,8 +126,9 @@ def add_watermark(input_path: str) -> str | bool:
             FFMPEG_PATH, "-y", "-i", input_path,
             "-vf", drawtext,
             "-c:a", "copy",
-            "-preset", "fast",
-            "-crf", "23",
+            "-preset", "veryfast",
+            "-crf", "24",
+            "-threads", "0",
             output_path,
         ]
         result = subprocess.run(
