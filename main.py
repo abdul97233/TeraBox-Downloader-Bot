@@ -2618,6 +2618,34 @@ async def force_restart(m: UpdateNewMessage):
         from_users=[OWNER_ID],
     )
 )
+def _read_config_storage():
+    """Read PRIVATE_CHAT_ID straight from config.py file (None if unreadable)."""
+    import re as _re
+    try:
+        cfg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.py")
+        with open(cfg, "r", encoding="utf-8") as f:
+            src = f.read()
+        mm = _re.search(r"^PRIVATE_CHAT_ID\s*=\s*(-?\d+)", src, _re.MULTILINE)
+        return int(mm.group(1)) if mm else None
+    except Exception:
+        return None
+
+
+def _write_config_storage(new_id):
+    """Rewrite PRIVATE_CHAT_ID line in local config.py. Returns True/False."""
+    import re as _re
+    cfg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.py")
+    with open(cfg, "r", encoding="utf-8") as f:
+        src = f.read()
+    updated, n = _re.subn(r"^PRIVATE_CHAT_ID\s*=\s*-?\d+",
+                          f"PRIVATE_CHAT_ID = {int(new_id)}", src, count=1, flags=_re.MULTILINE)
+    if not n:
+        return False
+    with open(cfg, "w", encoding="utf-8") as f:
+        f.write(updated)
+    return True
+
+
 async def set_storage(m: UpdateNewMessage):
     match = m.pattern_match
     new_id = int(match.group(1))
@@ -2625,12 +2653,16 @@ async def set_storage(m: UpdateNewMessage):
     PRIVATE_CHAT_ID = new_id
     try:
         db.set("storage_chat_id", new_id)
-        saved = "Saved — survives restarts and /update."
+        saved = "Redis: saved."
     except Exception:
-        saved = "WARNING: could not persist (Redis unavailable) — will revert on restart."
+        saved = "Redis: FAILED (unavailable) — restart will revert unless config file saved."
+    try:
+        cfg_saved = "config.py: updated." if _write_config_storage(new_id) else "config.py: line not found."
+    except Exception as e:
+        cfg_saved = f"config.py: FAILED (`{e}`)."
     await m.reply(
         f"Storage chat updated to `{PRIVATE_CHAT_ID}`.\n"
-        f"Files will now upload to the new chat.\n{saved}\n"
+        f"Files will now upload to the new chat.\n{saved}\n{cfg_saved}\n"
         f"Note: files cached from the old chat stay there; old links still forward from it."
     )
 
@@ -2649,9 +2681,10 @@ async def get_storage(m: UpdateNewMessage):
     except Exception:
         persisted = None
     await m.reply(
-        f"Active storage chat: `{PRIVATE_CHAT_ID}`\n"
-        f"Persisted in Redis: `{persisted}`\n"
-        f"Config default: `{CHAT_ID_DEFAULT}`"
+        f"Active (runtime): `{PRIVATE_CHAT_ID}`\n"
+        f"Redis override: `{persisted}`\n"
+        f"config.py file: `{_read_config_storage()}`\n"
+        f"Boot default: `{CHAT_ID_DEFAULT}`"
     )
 
 
