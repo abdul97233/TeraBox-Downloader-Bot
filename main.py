@@ -216,16 +216,6 @@ def set_custom_tag(user_id, tag):
     db.hset(CUSTOM_TAGS_KEY, str(user_id), tag)
 
 
-def _expiry_line_for(data):
-    """Caption expiry-warning line (empty when link not expiring soon)."""
-    try:
-        from commands.ux import build_expiry_warning as _ew
-        w = _ew((data or {}).get("expires_in", ""))
-    except Exception:
-        w = ""
-    return f"╟➣𝗘𝘅𝗽𝗶𝗿𝘆: {w}\n" if w else ""
-
-
 def log_audit(action, admin_id, details=""):
     """Log admin action to Redis audit trail."""
     import json as _json
@@ -972,13 +962,14 @@ async def start(m: UpdateNewMessage):
     user = await bot.get_entity(user_id)
     name = user.first_name
 
-    # Notify admins
-    admin_message = f"👤 New user started bot:\nName: {name}\nUsername: @{user.username or '-'}\nID: `{user_id}`"
-    for admin_id in get_all_admins():
-        try:
-            await bot.send_message(admin_id, admin_message)
-        except Exception:
-            pass
+    # Notify admins (skip when the starter is an admin themselves)
+    if user_id not in get_all_admins():
+        admin_message = f"👤 New user started bot:\nName: {name}\nUsername: @{user.username or '-'}\nID: `{user_id}`"
+        for admin_id in get_all_admins():
+            try:
+                await bot.send_message(admin_id, admin_message)
+            except Exception:
+                pass
 
     plan = "⭐ Premium" if is_premium_user(user_id) else "🆓 Free"
     remaining = ""
@@ -2092,7 +2083,7 @@ async def handle_message(m: Message):
 ╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}{tag_str}
 ╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(user_username or '-')}
 ╟➣𝐓𝐨𝐭𝐚𝐥 𝐓𝐢𝐦𝐞 𝐓𝐚𝐤𝐞𝐧: {total_time_str}
-{_expiry_line_for(data)}╚═════════════════⍟
+╚═════════════════⍟
          @NTMpro
 """
 
@@ -2284,7 +2275,6 @@ async def handle_message(m: Message):
 ╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}{tag_str}
 ╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(user_username or '-')}
 ╟➣𝐓𝐨𝐭𝐚𝐥 𝐓𝐢𝐦𝐞 𝐓𝐚𝐤𝐞𝐧: {total_time:.1f} sec
-{_expiry_line_for(data)}
 ╚═════════════════⍟
          @NTMpro
 """
@@ -2553,13 +2543,32 @@ async def update_bot(m: UpdateNewMessage):
                 await msg.edit("Already up to date! No changes found.")
             else:
                 # Restore stashed config
-                subprocess.run(
+                pop = subprocess.run(
                     ["git", "stash", "pop"],
                     capture_output=True, text=True, cwd=cwd, timeout=10,
                 )
+                pop_warn = "" if pop.returncode == 0 else "\n\nWARNING: `git stash pop` failed — config.py may still be stashed! Check VPS."
+                # Safety: never restart into broken code
+                await msg.edit("Verifying pulled code...")
+                check = subprocess.run(
+                    [sys.executable, "-m", "py_compile", "main.py", "tools.py",
+                     "terabox.py", "cansend.py", "commands/admin_users.py",
+                     "commands/analytics.py", "commands/maintenance.py",
+                     "commands/ux.py", "commands/redeem_core.py",
+                     "commands/config_editor.py", "commands/user_status.py",
+                     "utils/tags.py", "utils/premium.py"],
+                    capture_output=True, text=True, cwd=cwd, timeout=30,
+                )
+                if check.returncode != 0:
+                    return await msg.edit(
+                        "Update pulled BUT new code has syntax errors — NOT restarting.\n\n"
+                        f"`{(check.stderr or check.stdout)[:800]}`"
+                        f"{pop_warn}"
+                    )
                 await msg.edit(
                     "Update completed!\n\n"
                     f"`{output}`"
+                    f"{pop_warn}"
                 )
                 # Send separate restart message (visible even after restart)
                 await m.reply("Restarting bot now...")
@@ -3228,7 +3237,6 @@ async def folder_download(m: UpdateNewMessage):
 ╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}{tag_str}
 ╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(user_username or '-')}
 ╟➣𝐓𝐨𝐭𝐚𝐥 𝐓𝐢𝐦𝐞 𝐓𝐚𝐤𝐞𝐧: {total_time:.1f} sec
-{_expiry_line_for(data)}
 ╚═════════════════⍟
          @NTMpro
 """
