@@ -197,7 +197,7 @@ def register(bot, ctx):
     async def _redeem_btn(e):
         await _auto_redeem_button(e, bot, ctx)
 
-    @bot.on(events.NewMessage(pattern="/broadcast", incoming=True, outgoing=False))
+    @bot.on(events.NewMessage(pattern=r"^/broadcast(?:\s|$)", incoming=True, outgoing=False))
     async def _broadcast(m):
         if owner_id is None or int(m.sender_id) != int(owner_id):
             return await m.reply("Owner only.")

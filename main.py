@@ -2887,6 +2887,7 @@ async def admin_commands(m: UpdateNewMessage):
 /configview — View runtime config
 /configset `<KEY>` `<VALUE>` — Edit runtime config
 /configreset `<KEY>` — Reset key to default
+/configreset `<KEY>` — Reset key to default
 /setapi `<primary|fallback>` `<template>` — Rotate API live
 /reloadconfig — Reload API templates
 /backup — Backup Redis data
@@ -2912,6 +2913,7 @@ async def admin_commands(m: UpdateNewMessage):
 **── Owner Only ──**
 /update — Pull latest code & restart bot
 /setstorage `<chat_id>` — Update storage chat
+/getstorage — Show active/persisted storage IDs
 /setforce channel `@username` — Add force channel
 /setforce group `@username` — Add force group
 /removeforce channel `@username` — Remove force channel
