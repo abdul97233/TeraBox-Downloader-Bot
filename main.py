@@ -3988,6 +3988,8 @@ async def list_admins(m: UpdateNewMessage):
 
 
 # ---- Modular command packs (multi-file layout; never break boot) ----
+_loaded_packs = []
+
 try:
     from commands.admin_users import register as _reg_admin_users
     _reg_admin_users(bot, {
@@ -3997,6 +3999,7 @@ try:
         "clear_tag": lambda uid: db.hdel(CUSTOM_TAGS_KEY, str(uid)),
         "get_custom_tag": get_custom_tag, "OWNER_ID": OWNER_ID,
     })
+    _loaded_packs.append("admin_users")
 except Exception as e:
     log.warning(f"admin_users pack not loaded: {e}")
 
@@ -4007,6 +4010,7 @@ try:
         "api_templates": {"primary": TERABOX_API_TEMPLATE, "fallback": TERABOX_FALLBACK_API_TEMPLATE},
         "log_path": LOG_FILE,
     })
+    _loaded_packs.append("analytics")
 except Exception as e:
     log.warning(f"analytics pack not loaded: {e}")
     _track_dl = None
@@ -4034,6 +4038,7 @@ try:
         "maintenance_key": MAINTENANCE_KEY, "log_file": LOG_FILE,
         "apply_api_templates": _apply_api_templates,
     })
+    _loaded_packs.append("maintenance")
 except Exception as e:
     log.warning(f"maintenance pack not loaded: {e}")
 
@@ -4071,6 +4076,7 @@ try:
         "get_all_users": lambda: db.smembers("all_known_users"),
         "redeem_code_fn": _redeem_for, "notify_redeem": _notify_redeem,
     })
+    _loaded_packs.append("ux")
 except Exception as e:
     log.warning(f"ux pack not loaded: {e}")
 
@@ -4158,6 +4164,7 @@ try:
         _reg_cfg(bot, {"db": db, "is_admin": is_admin, "log_audit": log_audit,
                        "get_runtime": _get_runtime, "set_runtime": _set_runtime,
                        "reset_runtime": _reset_runtime})
+        _loaded_packs.append("config_editor")
     except Exception as e:
         log.warning(f"config editor pack not loaded: {e}")
 except Exception as e:
@@ -4174,7 +4181,7 @@ cleanup_task = bot.loop.create_task(auto_cleanup_downloads())
 
 
 async def _boot_notify():
-    """Confirm restart/update back online (chat id stored before execl)."""
+    """Pro build card on restart/update (chat id stored before execl)."""
     try:
         await asyncio.sleep(8)
         raw = db.get("boot_notify")
@@ -4185,6 +4192,10 @@ async def _boot_notify():
         except Exception:
             pass
         try:
+            boots = int(db.incr("stats:boot_count") or 1)
+        except Exception:
+            boots = 1
+        try:
             sha = subprocess.run(
                 ["git", "rev-parse", "--short", "HEAD"],
                 capture_output=True, text=True, timeout=5,
@@ -4192,7 +4203,27 @@ async def _boot_notify():
             ).stdout.strip() or "?"
         except Exception:
             sha = "?"
-        await bot.send_message(int(raw), f"✅ Bot is back online.\nVersion: `{sha}`")
+        try:
+            maint = "ON" if is_maintenance() else "OFF"
+        except Exception:
+            maint = "?"
+        packs = len(_loaded_packs) if "_loaded_packs" in globals() else 0
+        started = time.strftime("%d %b %Y, %I:%M %p")
+        text = (
+            "┏━━━━━━━━━━⍟\n"
+            "┃ 𝐍𝐓𝐌 𝐓𝐞𝐫𝐚 𝐁𝐨𝐱 𝐃𝐨𝐰𝐧𝐥𝐨𝐚𝐝𝐞𝐫 𝐁𝐨𝐭\n"
+            "┗━━━━━━━━━━━━━━━━━⍟\n"
+            "✅ **System Online**\n\n"
+            f"🆔 Build: `{sha}` (#{boots})\n"
+            f"🕒 Started: `{started}`\n"
+            f"📦 Packs: `{packs}/5 loaded`\n"
+            f"💾 Storage: `{PRIVATE_CHAT_ID}`\n"
+            f"🛠 Maintenance: `{maint}`"
+        )
+        await bot.send_message(
+            int(raw), text, parse_mode="markdown",
+            buttons=[[Button.inline("⚙️ Open Admin Panel", data="menu_admin")]],
+        )
     except Exception as e:
         log.info(f"boot notify failed: {e}")
 
