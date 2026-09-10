@@ -1070,6 +1070,9 @@ mp4, mkv, webm, mov, avi, flv, wmv, m4v, mpg, mpeg, 3gp, ts, and more...
 `/dl 720p <link>` — Download + compress 720p
 `/dl 480p <link>` — Download + compress 480p
 `/folder <link>` — Download entire folder
+`/quick <link>` — Fast single-file download
+`/preview <link>` — Preview first 3 files
+`/mystatus` — Your premium/tag/stats
 `/mp3` — Reply to video → extract audio
 `/compress` — Reply to video → compress
 """
@@ -1205,6 +1208,9 @@ async def cb_tools(e):
 `/dl 720p <link>` — Download + compress 720p
 `/dl 480p <link>` — Download + compress 480p
 `/folder <link>` — Entire folder (⭐)
+`/quick <link>` — Fast single file
+`/preview <link>` — Preview folder
+`/mystatus` — Your status
 
 **🎵 Media Tools:**
 `/mp3` — Reply to video → Audio
@@ -1333,6 +1339,10 @@ Choose an admin action 👇
             Button.inline("📢 Broadcast", data="admin_broadcast"),
         ],
         [
+            Button.inline("🩺 API Health", data="admin_api"),
+            Button.inline("🧩 Config", data="admin_config"),
+        ],
+        [
             Button.inline("💾 Backup", data="admin_backup"),
         ],
         [Button.inline("◀️ Back", data="menu_main")],
@@ -1431,6 +1441,11 @@ async def cb_admin_premium(e):
 `/de <user_id>` — Demote
 `/premium_users` — List all
 `/demote_all_premium` — Remove all
+`/addpremium <id> <days>` — Grant days
+`/delpremium <id>` — Revoke
+`/renew <id> <days>` — Renew/extend
+`/finduser <id>` — Lookup user
+`/userstats [id]` — Download stats
 
 **Duration:** 1d, 2d, 3d, 5d, 7d, 1w, 2w, 1m, unlimited
 """
@@ -1455,6 +1470,7 @@ async def cb_admin_gc(e):
 `/gctrack 24h` — Cards used last 24h
 `/gctrack <user_id>` — Cards used by user
 `/gcdel <code>` — Delete a card
+`/gcheck <code>` — Validate a card
 `/allowredeem <user_id>` — Reset user redemption
 
 **Duration:** 1d, 2d, 3d, 5d, 7d, 1w, 2w, 1m, unlimited
@@ -1475,6 +1491,8 @@ async def cb_admin_tags(e):
 
 **Commands:**
 `/settag <user_id> <tag>` — Set custom tag
+`/masstag <id1,id2> <tag>` — Tag many users
+`/untag <id1,id2>` — Remove tags
 `/tag` — View your own tag
 
 **Auto Tags:**
@@ -1511,6 +1529,7 @@ async def cb_admin_ban(e):
 {ban_list}
 
 **Commands:**
+`/finduser <id>` — Lookup user
 `/ban <user_id>` — Ban
 `/unban <user_id>` — Unban
 `/banned_users` — List all
@@ -1530,6 +1549,9 @@ async def cb_admin_logs(e):
 ┗━━━━━━━━━━━━━━━━━━━━━⍟
 
 Use: `/logs` or `/logs 50`
+`/errors [n]` — Download failures
+`/apihealth` — API status
+`/logrotate` — Rotate log now
 """
     buttons = [[Button.inline("◀️ Back", data="menu_admin")]]
     await e.edit(text, parse_mode="markdown", buttons=buttons)
@@ -1546,9 +1568,45 @@ async def cb_admin_broadcast(e):
 ┗━━━━━━━━━━━━━━━━━━━━━⍟
 
 **Commands:**
-`/broadcast <message>` — Send now
+`/broadcast <message>` — Send now (owner)
+`/broadcast_legacy <message>` — Via channel (admin)
 `/announce <minutes> <msg>` — Schedule delay
 """
+    buttons = [[Button.inline("◀️ Back", data="menu_admin")]]
+    await e.edit(text, parse_mode="markdown", buttons=buttons)
+
+
+@bot.on(events.CallbackQuery(data=b"admin_api"))
+async def cb_admin_api(e):
+    if not is_admin(e.sender_id):
+        return await e.answer("Access denied!", alert=True)
+    try:
+        from commands.analytics import check_api_health
+        res = await check_api_health(
+            {"primary": TERABOX_API_TEMPLATE, "fallback": TERABOX_FALLBACK_API_TEMPLATE},
+            timeout=10,
+        )
+        lines = ["**API Health**", ""]
+        for name, r in res.items():
+            icon = "OK" if r["ok"] else "DOWN"
+            lines.append(f"{icon} **{name}**: status={r['status']} {r['latency_ms']}ms")
+        text = "\n".join(lines) + "\n\nFull: `/apihealth`"
+    except Exception as ex:
+        text = f"API check failed: `{ex}`"
+    buttons = [[Button.inline("◀️ Back", data="menu_admin")]]
+    await e.edit(text, parse_mode="markdown", buttons=buttons)
+
+
+@bot.on(events.CallbackQuery(data=b"admin_config"))
+async def cb_admin_config(e):
+    if not is_admin(e.sender_id):
+        return await e.answer("Access denied!", alert=True)
+    try:
+        from commands.config_editor import build_config_view_text
+        text = "**Runtime Config**\n\n" + build_config_view_text(_get_runtime())
+        text += "\n\nEdit: `/configview`, `/configset <KEY> <VALUE>`"
+    except Exception as ex:
+        text = f"Config view failed: `{ex}`"
     buttons = [[Button.inline("◀️ Back", data="menu_admin")]]
     await e.edit(text, parse_mode="markdown", buttons=buttons)
 
@@ -2662,6 +2720,10 @@ async def admin_commands(m: UpdateNewMessage):
 /de `<user_id>` — Demote from premium
 /premium_users — List all premium with expiry
 /demote_all_premium — Remove all premium
+/addpremium `<id>` `<days>` — Grant premium days
+/delpremium `<id>` — Revoke premium
+/renew `<id>` `<days>` — Renew/extend premium
+/userstats `[id]` — Per-user download stats
 
 **Duration:** `1d` `2d` `3d` `5d` `7d` `1w` `2w` `1m` `unlimited`
 
@@ -2669,19 +2731,31 @@ async def admin_commands(m: UpdateNewMessage):
 /gen `<duration>` `[count]` — Generate gift cards
 /gclist — List all gift cards
 /gcdel `<code>` — Delete a gift card
+/gcheck `<code>` — Validate a gift card
 
 **── User Management ──**
+/finduser `<id>` — Lookup user (status/premium/tag)
 /ban `<user_id>` — Ban user
 /unban `<user_id>` — Unban user
 /banned_users — List banned users
+/masstag `<id1,id2>` `<tag>` — Tag many users
+/untag `<id1,id2>` — Remove tags
 /remove `<user_id>` — Remove user rate limit
-/broadcast `<message>` — Broadcast to all users
+/broadcast `<message>` — Broadcast (owner only)
+/broadcast_legacy `<message>` — Broadcast via channel
 /announce `<minutes>` `<message>` — Scheduled broadcast
 
 **── Bot Management ──**
-/stats — Bot statistics
+/stats — Bot statistics + top users/links
 /usage — Disk, RAM, CPU usage
 /logs `[count]` — Recent error logs
+/errors `[count]` — Recent download failures
+/apihealth — Primary/fallback API status
+/logrotate — Rotate bot.log now (auto daily)
+/configview — View runtime config
+/configset `<KEY>` `<VALUE>` — Edit runtime config
+/setapi `<primary|fallback>` `<template>` — Rotate API live
+/reloadconfig — Reload API templates
 /backup — Backup Redis data
 /setplan `<text>` — Update plan text
 /cleandownloads — Clean downloads folder
@@ -2693,6 +2767,9 @@ async def admin_commands(m: UpdateNewMessage):
 /dl `720p` `<link>` — Download + compress 720p
 /dl `480p` `<link>` — Download + compress 480p
 /folder `<link>` — Download entire folder (premium)
+/quick `<link>` — Fast single-file download
+/preview `<link>` — Preview first 3 files
+/mystatus — Your premium/tag/stats
 /setthumb — Reply to image → set thumbnail (premium)
 /removethumb — Remove custom thumbnail
 /lang `<code>` — Set language (en/ne/hi)
