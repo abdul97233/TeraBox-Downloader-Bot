@@ -1592,7 +1592,8 @@ async def cb_admin_backup(e):
 ┗━━━━━━━━━━━━━━━━━━━━━⍟
 
 Use: `/backup`
-Exports all Redis data to a JSON file.
+Full snapshot: premium, bans, tags, gift cards, stats, history, config.
+Restore: reply to the file with `/restore`
 """
     buttons = [[Button.inline("◀️ Back", data="menu_admin")]]
     await e.edit(text, parse_mode="markdown", buttons=buttons)
@@ -2890,7 +2891,8 @@ async def admin_commands(m: UpdateNewMessage):
 /configreset `<KEY>` — Reset key to default
 /setapi `<primary|fallback>` `<template>` — Rotate API live
 /reloadconfig — Reload API templates
-/backup — Backup Redis data
+/backup — Full Redis snapshot
+/restore — Restore (reply to backup file)
 /setplan `<text>` — Update plan text
 /cleandownloads — Clean downloads folder
 
@@ -3518,42 +3520,8 @@ async def get_logs(m: UpdateNewMessage):
 
 
 # ==================== BACKUP — REDIS DATA ====================
-
-@bot.on(
-    events.NewMessage(
-        pattern="/backup",
-        incoming=True,
-        outgoing=False,
-        from_users=[OWNER_ID],
-    )
-)
-async def backup_redis(m: UpdateNewMessage):
-    msg = await m.reply("Backing up Redis data...")
-    try:
-        backup = {}
-        # Premium users
-        backup["premium_set"] = list(db.smembers(PREMIUM_SET_KEY))
-        backup["premium_expiry"] = db.hgetall(PREMIUM_EXPIRY_KEY)
-        # Banned users
-        backup["banned_users"] = list(db.smembers(BANNED_USERS_KEY))
-        # Gift cards
-        backup["gift_cards"] = db.hgetall(GC_REDIS_KEY)
-        # Stats
-        backup["stats"] = db.hgetall(STATS_KEY)
-
-        backup_path = os.path.join(DOWNLOAD_DIR, "backup.json")
-        with open(backup_path, "w") as f:
-            json.dump(backup, f, indent=2, default=str)
-
-        await bot.send_file(
-            m.chat.id,
-            file=backup_path,
-            caption=f"**Redis Backup**\nPremium: {len(backup['premium_set'])}\nBanned: {len(backup['banned_users'])}\nGift Cards: {len(backup['gift_cards'])}",
-            parse_mode="markdown",
-        )
-        os.unlink(backup_path)
-    except Exception as e:
-        await msg.edit(f"Backup failed: `{e}`")
+# NOTE: /backup + /restore now live in commands/backup.py (full snapshot).
+# The old partial handler was removed to avoid double replies.
 
 
 # ==================== STATS — BOT STATISTICS ====================
@@ -4178,6 +4146,13 @@ try:
 except Exception as e:
     log.warning(f"auto-rotate not started: {e}")
 
+try:
+    from commands.backup import register as _reg_backup
+    _reg_backup(bot, {"db": db, "OWNER_ID": OWNER_ID, "download_dir": DOWNLOAD_DIR})
+    _loaded_packs.append("backup")
+except Exception as e:
+    log.warning(f"backup pack not loaded: {e}")
+
 # Start the cleanup task before running the bot
 cleanup_task = bot.loop.create_task(auto_cleanup_downloads())
 
@@ -4218,7 +4193,7 @@ async def _boot_notify():
             "✅ **System Online**\n\n"
             f"🆔 Build: `{sha}` (#{boots})\n"
             f"🕒 Started: `{started}`\n"
-            f"📦 Packs: `{packs}/5 loaded`\n"
+            f"📦 Packs: `{packs}/6 loaded`\n"
             f"💾 Storage: `{PRIVATE_CHAT_ID}`\n"
             f"🛠 Maintenance: `{maint}`"
         )
