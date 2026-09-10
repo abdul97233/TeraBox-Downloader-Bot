@@ -131,11 +131,13 @@ def add_watermark(input_path: str) -> str | bool:
             "-threads", "0",
             output_path,
         ]
+        _t0 = time.time()
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=900
+            cmd, capture_output=True, text=True, timeout=300
         )
         if result.returncode == 0 and os.path.isfile(output_path):
             os.replace(output_path, input_path)
+            log.info(f"Watermark done in {time.time() - _t0:.0f}s: {input_path}")
             return input_path
         else:
             log.info(f"ffmpeg watermark error: {result.stderr[:500]}")
