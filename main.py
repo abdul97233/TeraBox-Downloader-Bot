@@ -71,6 +71,19 @@ DOWNLOAD_COOLDOWN_SECONDS = 10
 PARALLEL_DOWNLOADS = 5
 download_semaphore = asyncio.Semaphore(PARALLEL_DOWNLOADS)
 
+# ---- Modular packages (multi-file layout; safe fallbacks if missing) ----
+try:
+    from utils.tags import (
+        resolve_custom_tag as _resolve_custom_tag,
+        clear_tag_entry as _clear_tag_entry,
+    )
+    from utils.premium import revoke_premium_entry as _revoke_premium_entry
+    from commands.user_status import fetch_user_stats as _fetch_user_stats
+    _MODULAR_UTILS = True
+except Exception as _mod_err:
+    _MODULAR_UTILS = False
+    _mod_err = _mod_err  # kept for debugging via logs if needed
+
 
 # ==================== DYNAMIC ADMIN SYSTEM ====================
 
@@ -110,9 +123,25 @@ def grant_premium(user_id, days):
 
 
 def revoke_premium(user_id):
-    """Revoke premium from user."""
+    """Revoke premium from user (also clears gift-card tag)."""
+    if _MODULAR_UTILS:
+        try:
+            _revoke_premium_entry(
+                db, PREMIUM_EXPIRY_KEY, PREMIUM_SET_KEY, user_id,
+                custom_tags_key=CUSTOM_TAGS_KEY, owner_id=OWNER_ID,
+                is_admin_fn=is_admin,
+            )
+            return
+        except Exception:
+            pass
     db.hdel(PREMIUM_EXPIRY_KEY, str(user_id))
     db.srem(PREMIUM_SET_KEY, str(user_id))
+    # End-to-end tag cleanup: never leave a stale gift-card tag behind.
+    try:
+        if int(user_id) != int(OWNER_ID) and not is_admin(user_id):
+            db.hdel(CUSTOM_TAGS_KEY, str(user_id))
+    except Exception:
+        pass
 
 
 def is_premium_user(user_id):
@@ -144,25 +173,28 @@ def get_all_premium_users():
 
 def get_custom_tag(user_id):
     """Get custom tag for a user. Auto-sets owner/admin tags.
-    Auto-removes tag if premium expired."""
+    Auto-removes tag if premium expired (delegates to utils/tags.py)."""
+    if _MODULAR_UTILS:
+        try:
+            return _resolve_custom_tag(
+                db, CUSTOM_TAGS_KEY, user_id, owner_id=OWNER_ID,
+                is_admin_fn=is_admin, is_premium_fn=is_premium_user,
+            )
+        except Exception:
+            pass
     uid = str(user_id)
     is_prem = is_premium_user(user_id)
-    
-    # Auto-tag owner (always has tag)
     if user_id == OWNER_ID:
         tag = db.hget(CUSTOM_TAGS_KEY, uid) or "OWNER"
         db.hset(CUSTOM_TAGS_KEY, uid, tag)
         return tag
-    # Auto-tag admins (always has tag)
     if is_admin(user_id):
         tag = db.hget(CUSTOM_TAGS_KEY, uid) or "ADMIN"
         db.hset(CUSTOM_TAGS_KEY, uid, tag)
         return tag
-    # For regular users: if premium expired, remove tag
     if not is_prem:
         db.hdel(CUSTOM_TAGS_KEY, uid)
         return ""
-    # Regular premium user: return their tag
     tag = db.hget(CUSTOM_TAGS_KEY, uid)
     return tag if tag else ""
 
@@ -2318,7 +2350,12 @@ async def clean_downloads(m: UpdateNewMessage):
 
 
 async def get_user_stats(user_id: int) -> dict:
-    """Get download stats for a user from Redis."""
+    """Get download stats for a user from Redis (delegates to commands/user_status.py)."""
+    if _MODULAR_UTILS:
+        try:
+            return _fetch_user_stats(db, user_id)
+        except Exception:
+            pass
     try:
         key = f"user_stats_{user_id}"
         data = db.hgetall(key)
