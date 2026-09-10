@@ -2622,6 +2622,10 @@ async def update_bot(m: UpdateNewMessage):
                 )
                 # Send separate restart message (visible even after restart)
                 await m.reply("Restarting bot now...")
+                try:
+                    db.set("boot_notify", m.chat.id)
+                except Exception:
+                    pass
                 await asyncio.sleep(5)
                 os.execl(sys.executable, sys.executable, *sys.argv)
         else:
@@ -2648,6 +2652,10 @@ async def update_bot(m: UpdateNewMessage):
 )
 async def restart_bot(m: UpdateNewMessage):
     msg = await m.reply("Restarting bot...")
+    try:
+        db.set("boot_notify", m.chat.id)
+    except Exception:
+        pass
     await asyncio.sleep(2)
     os.execl(sys.executable, sys.executable, *sys.argv)
 
@@ -4163,6 +4171,33 @@ except Exception as e:
 
 # Start the cleanup task before running the bot
 cleanup_task = bot.loop.create_task(auto_cleanup_downloads())
+
+
+async def _boot_notify():
+    """Confirm restart/update back online (chat id stored before execl)."""
+    try:
+        await asyncio.sleep(8)
+        raw = db.get("boot_notify")
+        if not raw:
+            return
+        try:
+            db.delete("boot_notify")
+        except Exception:
+            pass
+        try:
+            sha = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                capture_output=True, text=True, timeout=5,
+                cwd=os.path.dirname(os.path.abspath(__file__)),
+            ).stdout.strip() or "?"
+        except Exception:
+            sha = "?"
+        await bot.send_message(int(raw), f"✅ Bot is back online.\nVersion: `{sha}`")
+    except Exception as e:
+        log.info(f"boot notify failed: {e}")
+
+
+boot_task = bot.loop.create_task(_boot_notify())
 
 log.info("Bot starting...")
 bot.start(bot_token=BOT_TOKEN)
