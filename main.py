@@ -54,6 +54,17 @@ db = redis.Redis(
     decode_responses=True,
 )
 
+# Persisted storage-chat override (/setstorage) — survives restarts + /update.
+try:
+    _saved_storage = db.get("storage_chat_id")
+    if _saved_storage:
+        PRIVATE_CHAT_ID = int(_saved_storage)
+except Exception as e:
+    try:
+        log.warning(f"storage override not applied: {e}")
+    except Exception:
+        pass
+
 PREMIUM_SET_KEY = "premium_users"       # Redis SET — legacy, kept for /demote_all_premium
 PREMIUM_EXPIRY_KEY = "premium_expiry"   # Redis HASH — user_id → expiry timestamp
 BANNED_USERS_KEY = "banned_users"       # Redis SET — banned user IDs
@@ -2607,7 +2618,16 @@ async def set_storage(m: UpdateNewMessage):
     new_id = int(match.group(1))
     global PRIVATE_CHAT_ID
     PRIVATE_CHAT_ID = new_id
-    await m.reply(f"Storage chat updated to `{PRIVATE_CHAT_ID}`.\nFiles will now upload to the new chat.")
+    try:
+        db.set("storage_chat_id", new_id)
+        saved = "Saved — survives restarts and /update."
+    except Exception:
+        saved = "WARNING: could not persist (Redis unavailable) — will revert on restart."
+    await m.reply(
+        f"Storage chat updated to `{PRIVATE_CHAT_ID}`.\n"
+        f"Files will now upload to the new chat.\n{saved}\n"
+        f"Note: files cached from the old chat stay there; old links still forward from it."
+    )
 
 
 # ==================== OWNER ONLY: /setforce ====================
