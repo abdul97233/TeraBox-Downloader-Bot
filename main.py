@@ -431,11 +431,17 @@ async def generate_gc(m: UpdateNewMessage):
 
     tag_info = f"\nTag: **{tag}**" if tag else ""
 
+    try:
+        from commands.ux import giftcard_buttons as _gc_buttons
+        _gc_rows = _gc_buttons(codes)
+    except Exception:
+        _gc_rows = None
     await m.reply(
         f"**{count} Gift Card(s) Generated**\n\n"
         f"Duration: **{duration_label}**{tag_info}\n\n"
         f"**Send these to users:**\n" + "\n".join(redeem_lines),
         parse_mode="markdown",
+        buttons=_gc_rows,
     )
 
 
@@ -2107,6 +2113,13 @@ async def handle_message(m: Message):
                 pass
 
             db.hincrby(STATS_KEY, "total_downloads", 1)
+            try:
+                if "_track_dl" in globals() and callable(globals()["_track_dl"]):
+                    globals()["_track_dl"](db, m.sender_id, int(data.get("sizebytes", 0) or 0))
+                else:
+                    db.hincrby(f"user_stats_{m.sender_id}", "total", 1)
+            except Exception:
+                pass
             import json as _json
             history_entry = _json.dumps({
                 "file": data["file_name"], "size": data["size"],
@@ -2285,6 +2298,13 @@ async def handle_message(m: Message):
                         pass
 
                     db.hincrby(STATS_KEY, "total_downloads", 1)
+                    try:
+                        if "_track_dl" in globals() and callable(globals()["_track_dl"]):
+                            globals()["_track_dl"](db, m.sender_id, int(data.get("sizebytes", 0) or 0))
+                        else:
+                            db.hincrby(f"user_stats_{m.sender_id}", "total", 1)
+                    except Exception:
+                        pass
                 else:
                     failed_count += 1
                     await update_multi_progress(f"❌ Upload failed: `{data['file_name']}`")
