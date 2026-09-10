@@ -55,6 +55,7 @@ db = redis.Redis(
 )
 
 # Persisted storage-chat override (/setstorage) — survives restarts + /update.
+CHAT_ID_DEFAULT = PRIVATE_CHAT_ID
 try:
     _saved_storage = db.get("storage_chat_id")
     if _saved_storage:
@@ -2631,6 +2632,26 @@ async def set_storage(m: UpdateNewMessage):
         f"Storage chat updated to `{PRIVATE_CHAT_ID}`.\n"
         f"Files will now upload to the new chat.\n{saved}\n"
         f"Note: files cached from the old chat stay there; old links still forward from it."
+    )
+
+
+@bot.on(
+    events.NewMessage(
+        pattern=r"/getstorage",
+        incoming=True,
+        outgoing=False,
+        from_users=[OWNER_ID],
+    )
+)
+async def get_storage(m: UpdateNewMessage):
+    try:
+        persisted = db.get("storage_chat_id")
+    except Exception:
+        persisted = None
+    await m.reply(
+        f"Active storage chat: `{PRIVATE_CHAT_ID}`\n"
+        f"Persisted in Redis: `{persisted}`\n"
+        f"Config default: `{CHAT_ID_DEFAULT}`"
     )
 
 
