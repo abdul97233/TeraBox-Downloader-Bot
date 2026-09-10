@@ -122,20 +122,31 @@ def build_userstats_text(user_id, stats, premium_text, tag):
             f"**Last activity:** {last}")
 
 
+HEALTH_PROBE_LINK = "https://www.terabox.com/s/1healthcheck"
+
+
 async def check_api_health(api_templates, timeout=10):
-    """Async health probe using aiohttp directly."""
+    """Async health probe using aiohttp directly.
+
+    Probes with a dummy link (bare `url=` gets rejected with 400 even when
+    the server is fine). Any response below 500 means the server is
+    reachable; 5xx/timeout means down.
+    """
     out = {}
     items = api_templates.items() if isinstance(api_templates, dict) else enumerate(api_templates or [])
     t = aiohttp.ClientTimeout(total=timeout, connect=10, sock_read=10)
     async with aiohttp.ClientSession(timeout=t) as sess:
         for name, tpl in items:
-            url = tpl.replace("{url}", "") if isinstance(tpl, str) else str(tpl)
+            if isinstance(tpl, str) and "{url}" in tpl:
+                url = tpl.replace("{url}", HEALTH_PROBE_LINK)
+            else:
+                url = str(tpl)
             key = str(name)
             t0 = time.monotonic()
             try:
                 async with sess.get(url) as r:
                     ms = int((time.monotonic() - t0) * 1000)
-                    out[key] = {"ok": r.status in (200, 302), "latency_ms": ms, "status": r.status}
+                    out[key] = {"ok": r.status < 500, "latency_ms": ms, "status": r.status}
             except Exception:
                 out[key] = {"ok": False, "latency_ms": int((time.monotonic() - t0) * 1000), "status": None}
     return out
