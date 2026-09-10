@@ -55,13 +55,32 @@ def get_top_links(db, limit=3):
 def _coerce_top(top_users, limit=5):
     rows = []
     for u in (top_users or [])[:limit]:
-        if isinstance(u, (list, tuple)) and len(u) >= 2:
-            rows.append((str(u[0]), int(u[1])))
+        if isinstance(u, (list, tuple)) and len(u) >= 3:
+            rows.append((str(u[0]), int(u[1]), u[2]))
+        elif isinstance(u, (list, tuple)) and len(u) >= 2:
+            rows.append((str(u[0]), int(u[1]), ""))
         elif isinstance(u, dict):
             uid = u.get("user_id", u.get("id", "?"))
             n = u.get("downloads", u.get("total", 0))
-            rows.append((str(uid), int(n)))
+            rows.append((str(uid), int(n), u.get("name", "")))
     return rows
+
+
+async def resolve_user_names(bot, user_ids):
+    """Map user IDs to 'Full Name (@username)'. Failures map to ''."""
+    out = {}
+    for uid in user_ids or []:
+        try:
+            u = await bot.get_entity(int(uid))
+            name = (u.first_name or "").strip()
+            if getattr(u, "last_name", None):
+                name = f"{name} {u.last_name}".strip()
+            if getattr(u, "username", None):
+                name = f"{name} (@{u.username})".strip()
+            out[str(uid)] = name
+        except Exception:
+            out[str(uid)] = ""
+    return out
 
 
 def build_stats_text(global_stats, top_users, top_links=None):
@@ -81,8 +100,9 @@ def build_stats_text(global_stats, top_users, top_links=None):
     if not rows:
         lines.append("_No user data yet._")
     else:
-        for i, (uid, n) in enumerate(rows, 1):
-            lines.append(f"{i}. `{uid}` — {n} downloads")
+        for i, (uid, n, name) in enumerate(rows, 1):
+            who = f"{name} `{uid}`" if name else f"`{uid}`"
+            lines.append(f"{i}. {who} — {n} downloads")
     links = list(top_links or [])
     if links:
         lines += ["", "**Popular Links:**"]
@@ -216,7 +236,13 @@ def register(bot, ctx):
             top.sort(key=lambda x: x[1], reverse=True)
         except Exception:
             top = []
-        await m.reply(build_stats_text(g, top[:5], get_top_links(db, 3)), parse_mode="markdown")
+        top5 = top[:5]
+        try:
+            names = await resolve_user_names(bot, [u for u, _ in top5])
+        except Exception:
+            names = {}
+        top5 = [(u, n, names.get(str(u), "")) for u, n in top5]
+        await m.reply(build_stats_text(g, top5, get_top_links(db, 3)), parse_mode="markdown")
 
     @bot.on(events.NewMessage(pattern=r"^/userstats(?:\s+(\d+))?", incoming=True,
                               outgoing=False, func=lambda m: is_admin(m.sender_id)))
