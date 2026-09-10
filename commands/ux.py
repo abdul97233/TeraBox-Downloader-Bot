@@ -20,7 +20,7 @@ def giftcard_buttons(codes):
         code = str(c).strip().upper()
         if not code:
             continue
-        rows.append([Button.inline(f"[gift] {code}", data=f"redeem_{code}"[:64])])
+        rows.append([Button.inline(f"🎁 {code}", data=f"redeem_{code}"[:64])])
     return rows
 
 
