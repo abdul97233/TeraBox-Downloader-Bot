@@ -869,18 +869,18 @@ async def view_tag_cmd(m: UpdateNewMessage):
 
 @bot.on(
     events.NewMessage(
-        pattern="/broadcast",
+        pattern="/broadcast_legacy",
         incoming=True,
         outgoing=False,
         func=lambda m: is_admin(m.sender_id),
     )
 )
 async def broadcast_message(m: UpdateNewMessage):
-    broadcast_text = m.text.split("/broadcast", 1)[1].strip()
+    broadcast_text = m.text.split("/broadcast_legacy", 1)[1].strip()
     if not broadcast_text:
         return await m.reply(
-            "**Usage:** `/broadcast <message>`\n"
-            "Send a message to all bot users."
+            "**Usage:** `/broadcast_legacy <message>`\n"
+            "Send a message to channel members (legacy). Use /broadcast for all users."
         )
 
     status = await m.reply("Broadcasting...")
@@ -3323,36 +3323,8 @@ async def backup_redis(m: UpdateNewMessage):
 
 
 # ==================== STATS — BOT STATISTICS ====================
-
-@bot.on(
-    events.NewMessage(
-        pattern="/stats",
-        incoming=True,
-        outgoing=False,
-        func=lambda m: is_admin(m.sender_id),
-    )
-)
-async def bot_stats(m: UpdateNewMessage):
-    total_downloads = int(db.hget(STATS_KEY, "total_downloads") or 0)
-    total_users = int(db.hget(STATS_KEY, "total_users") or 0)
-    premium_count = len(db.smembers(PREMIUM_SET_KEY))
-    banned_count = len(db.smembers(BANNED_USERS_KEY))
-    gc_count = db.hlen(GC_REDIS_KEY)
-
-    # Active today
-    today_key = f"active_{time.strftime('%Y-%m-%d')}"
-    active_today = int(db.get(today_key) or 0)
-
-    text = (
-        f"**Bot Statistics**\n\n"
-        f"**Total Downloads:** {total_downloads}\n"
-        f"**Total Users:** {total_users}\n"
-        f"**Active Today:** {active_today}\n"
-        f"**Premium Users:** {premium_count}\n"
-        f"**Banned Users:** {banned_count}\n"
-        f"**Gift Cards:** {gc_count}\n"
-    )
-    await m.reply(text, parse_mode="markdown")
+# NOTE: /stats now lives in commands/analytics.py (superset: totals + top-5).
+# The old handler was removed to avoid double replies.
 
 
 # ==================== /setplan — UPDATE PLAN TEXT ====================
@@ -3609,33 +3581,8 @@ async def resume_bot(m: UpdateNewMessage):
 
 
 # ==================== /maintenance — TOGGLE MAINTENANCE ====================
-
-@bot.on(
-    events.NewMessage(
-        pattern=r"/maintenance(?:\s+(on|off))?",
-        incoming=True,
-        outgoing=False,
-        from_users=[OWNER_ID],
-    )
-)
-async def maintenance_toggle(m: UpdateNewMessage):
-    state = m.pattern_match.group(1)
-    if state == "on":
-        db.set(MAINTENANCE_KEY, "1")
-        log_audit("MAINTENANCE_ON", m.sender_id)
-        await m.reply("🔧 **Maintenance mode ON**\nUsers will see maintenance message.")
-    elif state == "off":
-        db.delete(MAINTENANCE_KEY)
-        log_audit("MAINTENANCE_OFF", m.sender_id)
-        await m.reply("✅ **Maintenance mode OFF**\nBot is back online.")
-    else:
-        current = is_maintenance()
-        if current:
-            db.delete(MAINTENANCE_KEY)
-            await m.reply("✅ **Maintenance mode OFF**\nBot is back online.")
-        else:
-            db.set(MAINTENANCE_KEY, "1")
-            await m.reply("🔧 **Maintenance mode ON**\nUsers will see maintenance message.")
+# NOTE: /maintenance now lives in commands/maintenance.py (admin-wide + reason).
+# The old OWNER-only handler was removed to avoid double replies.
 
 
 # ==================== /auditlog — ADMIN ACTION LOG ====================

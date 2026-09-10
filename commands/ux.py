@@ -104,8 +104,25 @@ def _ctx(ctx, key, default=None):
     return getattr(ctx, key, default)
 
 
+async def _answer_redeem_button(e):
+    """One-click gift-card button tapped: hand the user a copyable /redeem command."""
+    try:
+        code = e.data.decode(errors="ignore").split("redeem_", 1)[1].strip().upper()
+    except Exception:
+        code = ""
+    try:
+        await e.answer("Copy the redeem command below", alert=False)
+    except Exception:
+        pass
+    if code:
+        try:
+            await e.reply(f"Redeem with:\n`/redeem {code}`")
+        except Exception:
+            pass
+
+
 def register(bot, ctx):
-    """Wire /quick, /preview, /broadcast."""
+    """Wire /quick, /preview, /broadcast + gift-card buttons."""
     db = _ctx(ctx, "db")
     owner_id = _ctx(ctx, "OWNER_ID")
     get_files_fn = _ctx(ctx, "get_files")
@@ -142,6 +159,10 @@ def register(bot, ctx):
         text = build_preview_text(files)
         w = build_expiry_warning(files[0].get("expires_in", ""))
         await m.reply(text + (f"\n\n{w}" if w else ""), parse_mode="markdown")
+
+    @bot.on(events.CallbackQuery(pattern=rb"redeem_"))
+    async def _redeem_btn(e):
+        await _answer_redeem_button(e)
 
     @bot.on(events.NewMessage(pattern="/broadcast", incoming=True, outgoing=False))
     async def _broadcast(m):

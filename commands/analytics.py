@@ -147,6 +147,22 @@ def register(bot, ctx):
                  "total_users": int(db.hget(STATS_KEY, "total_users") or 0)}
         except Exception:
             g = {"total_downloads": 0, "total_users": 0}
+        try:
+            g["active_today"] = int(db.get(f"active_{time.strftime('%Y-%m-%d')}") or 0)
+        except Exception:
+            pass
+        try:
+            g["premium_count"] = len(db.smembers("premium_users"))
+        except Exception:
+            pass
+        try:
+            g["banned_count"] = len(db.smembers("banned_users"))
+        except Exception:
+            pass
+        try:
+            g["gift_cards"] = db.hlen("gift_cards")
+        except Exception:
+            pass
         top = []
         try:
             for k in db.scan_iter(f"{USER_STATS_PREFIX}*", count=200):
