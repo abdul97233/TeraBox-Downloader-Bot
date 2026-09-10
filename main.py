@@ -204,6 +204,16 @@ def set_custom_tag(user_id, tag):
     db.hset(CUSTOM_TAGS_KEY, str(user_id), tag)
 
 
+def _expiry_line_for(data):
+    """Caption expiry-warning line (empty when link not expiring soon)."""
+    try:
+        from commands.ux import build_expiry_warning as _ew
+        w = _ew((data or {}).get("expires_in", ""))
+    except Exception:
+        w = ""
+    return f"╟➣𝗘𝘅𝗽𝗶𝗿𝘆: {w}\n" if w else ""
+
+
 def log_audit(action, admin_id, details=""):
     """Log admin action to Redis audit trail."""
     import json as _json
@@ -2045,7 +2055,7 @@ async def handle_message(m: Message):
 ╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}{tag_str}
 ╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(user_username or '-')}
 ╟➣𝐓𝐨𝐭𝐚𝐥 𝐓𝐢𝐦𝐞 𝐓𝐚𝐤𝐞𝐧: {total_time_str}
-╚═════════════════⍟
+{_expiry_line_for(data)}╚═════════════════⍟
          @NTMpro
 """
 
@@ -2115,7 +2125,7 @@ async def handle_message(m: Message):
             db.hincrby(STATS_KEY, "total_downloads", 1)
             try:
                 if "_track_dl" in globals() and callable(globals()["_track_dl"]):
-                    globals()["_track_dl"](db, m.sender_id, int(data.get("sizebytes", 0) or 0))
+                    globals()["_track_dl"](db, m.sender_id, int(data.get("sizebytes", 0) or 0), shorturl)
                 else:
                     db.hincrby(f"user_stats_{m.sender_id}", "total", 1)
             except Exception:
@@ -2237,6 +2247,7 @@ async def handle_message(m: Message):
 ╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}{tag_str}
 ╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(user_username or '-')}
 ╟➣𝐓𝐨𝐭𝐚𝐥 𝐓𝐢𝐦𝐞 𝐓𝐚𝐤𝐞𝐧: {total_time:.1f} sec
+{_expiry_line_for(data)}
 ╚═════════════════⍟
          @NTMpro
 """
@@ -2300,7 +2311,7 @@ async def handle_message(m: Message):
                     db.hincrby(STATS_KEY, "total_downloads", 1)
                     try:
                         if "_track_dl" in globals() and callable(globals()["_track_dl"]):
-                            globals()["_track_dl"](db, m.sender_id, int(data.get("sizebytes", 0) or 0))
+                            globals()["_track_dl"](db, m.sender_id, int(data.get("sizebytes", 0) or 0), shorturl)
                         else:
                             db.hincrby(f"user_stats_{m.sender_id}", "total", 1)
                     except Exception:
@@ -3075,6 +3086,7 @@ async def folder_download(m: UpdateNewMessage):
 ╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}{tag_str}
 ╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(user_username or '-')}
 ╟➣𝐓𝐨𝐭𝐚𝐥 𝐓𝐢𝐦𝐞 𝐓𝐚𝐤𝐞𝐧: {total_time:.1f} sec
+{_expiry_line_for(data)}
 ╚═════════════════⍟
          @NTMpro
 """
@@ -3104,6 +3116,11 @@ async def folder_download(m: UpdateNewMessage):
             done_count += 1
             if sent_id:
                 sent_count += 1
+                try:
+                    if "_track_dl" in globals() and callable(globals()["_track_dl"]):
+                        globals()["_track_dl"](db, m.sender_id, int(data.get("sizebytes", 0) or 0), url)
+                except Exception:
+                    pass
                 try:
                     await bot(ForwardMessagesRequest(
                         from_peer=PRIVATE_CHAT_ID, id=[sent_id],
@@ -3814,6 +3831,52 @@ try:
     })
 except Exception as e:
     log.warning(f"ux pack not loaded: {e}")
+
+# ---- Runtime config overrides (persisted in Redis, applied on boot) ----
+_CONFIG_EDITABLE = {"MAX_FILES_PER_REQUEST": (1, 50), "DOWNLOAD_COOLDOWN_SECONDS": (0, 300), "PARALLEL_DOWNLOADS": (1, 10)}
+
+def _get_runtime():
+    return {k: globals().get(k) for k in _CONFIG_EDITABLE}
+
+def _set_runtime(key, value):
+    key = str(key).upper()
+    if key not in _CONFIG_EDITABLE:
+        return False, "Unknown key."
+    lo, hi = _CONFIG_EDITABLE[key]
+    try:
+        v = int(value)
+    except Exception:
+        return False, "Must be an integer."
+    if not (lo <= v <= hi):
+        return False, f"Range {lo}-{hi}."
+    if key == "PARALLEL_DOWNLOADS":
+        global download_semaphore
+        download_semaphore = asyncio.Semaphore(v)
+    globals()[key] = v
+    return True, "ok"
+
+try:
+    _saved_cfg = db.hgetall("config_overrides") or {}
+    for _k, _v in _saved_cfg.items():
+        try:
+            _set_runtime(_k, int(_v))
+        except Exception:
+            pass
+except Exception as e:
+    log.warning(f"config overrides not applied: {e}")
+
+try:
+    from commands.config_editor import register as _reg_cfg
+    _reg_cfg(bot, {"db": db, "is_admin": is_admin, "log_audit": log_audit,
+                   "get_runtime": _get_runtime, "set_runtime": _set_runtime})
+except Exception as e:
+    log.warning(f"config editor pack not loaded: {e}")
+
+try:
+    from commands.maintenance import start_auto_rotate as _ar
+    _ar_task = _ar(bot.loop, LOG_FILE)
+except Exception as e:
+    log.warning(f"auto-rotate not started: {e}")
 
 # Start the cleanup task before running the bot
 cleanup_task = bot.loop.create_task(auto_cleanup_downloads())

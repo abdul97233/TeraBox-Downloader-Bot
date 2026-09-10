@@ -157,6 +157,30 @@ def register(bot, ctx):
         r = apply_mass_tags(ids, tag, set_custom_tag)
         await m.reply(f"Tagged {len(r['ok'])}/{len(ids)} as **{tag}**." + (f"\nFailed: {r['failed']}" if r["failed"] else ""))
 
+    @bot.on(events.NewMessage(pattern=r"/gcheck\s+(\S+)", incoming=True, outgoing=False, func=adm))
+    async def _gcheck(m):
+        code = m.pattern_match.group(1).strip().upper()
+        try:
+            days = db.hget("gift_cards", code)
+        except Exception:
+            days = None
+        try:
+            tag = db.hget("gc_tags", code)
+        except Exception:
+            tag = None
+        try:
+            used = db.hget("gc_used", code)
+        except Exception:
+            used = None
+        if used:
+            parts = str(used).split(":")
+            who = parts[0] if len(parts) > 0 else "?"
+            return await m.reply(f"`{code}` — **USED** by `{who}`." + (f"\nTag: **{tag}**" if tag else ""))
+        if days is None:
+            return await m.reply(f"`{code}` — invalid or unknown.")
+        label = f"{days} day(s)" if str(days) != "0" else "Permanent"
+        await m.reply(f"`{code}` — **VALID** ({label})." + (f"\nTag: **{tag}**" if tag else ""))
+
     @bot.on(events.NewMessage(pattern=r"/untag\s+([\d,\s;]+)", incoming=True, outgoing=False, func=adm))
     async def _untag(m):
         ids = parse_id_list(m.pattern_match.group(1))

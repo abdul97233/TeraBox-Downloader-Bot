@@ -84,6 +84,29 @@ def rotate_log(log_path, max_bytes=5_000_000, keep=3):
         return f"Logrotate failed: {e}"
 
 
+async def auto_rotate_loop(log_path, interval_hours=24, max_bytes=5_000_000, keep=3):
+    """Background task: rotate bot.log when oversized (runs forever)."""
+    import asyncio as _aio
+    import time as _t
+    while True:
+        try:
+            await _aio.sleep(float(interval_hours) * 3600)
+        except Exception:
+            break
+        try:
+            import os as _os
+            if _os.path.exists(log_path) and _os.path.getsize(log_path) >= max_bytes:
+                rotate_log(log_path, max_bytes, keep)
+        except Exception:
+            pass
+        _ = _t.time()
+
+
+def start_auto_rotate(bot_loop, log_path, interval_hours=24, max_bytes=5_000_000, keep=3):
+    """Schedule the auto-rotate loop on an existing event loop."""
+    return bot_loop.create_task(auto_rotate_loop(log_path, interval_hours, max_bytes, keep))
+
+
 def _short(t, n=160):
     t = "-" if t is None else str(t)
     return t if len(t) <= n else t[:n] + "..."

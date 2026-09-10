@@ -147,6 +147,7 @@ async def _fetch_files_from_api(api_template: str, url: str):
             "thumb": None,
             "direct_link": fast_link,
             "link": fast_link,
+            "expires_in": f.get("expires_in", ""),
         })
 
     if not result:

@@ -19,8 +19,11 @@ DEFAULT_LOG = os.path.normpath(
 )
 
 
-def track_download(db, user_id, size_bytes):
-    """Record one download: per-user hash + global STATS_KEY."""
+LINK_COUNTS_KEY = "link_counts"  # ZSET: link-id -> downloads
+
+
+def track_download(db, user_id, size_bytes, link=None):
+    """Record one download: per-user hash + global STATS_KEY + popular links."""
     try:
         ukey = f"{USER_STATS_PREFIX}{int(user_id)}"
         size = int(size_bytes or 0)
@@ -30,9 +33,23 @@ def track_download(db, user_id, size_bytes):
             db.hincrby(ukey, "storage", size)
         db.hset(ukey, "last_activity", now)
         db.hincrby(STATS_KEY, "total_downloads", 1)
+        if link:
+            try:
+                db.zincrby(LINK_COUNTS_KEY, 1, str(link)[:120])
+            except Exception:
+                pass
         return True
     except Exception:
         return False
+
+
+def get_top_links(db, limit=3):
+    """Return [(link_id, count)] most downloaded links."""
+    try:
+        rows = db.zrevrange(LINK_COUNTS_KEY, 0, int(limit) - 1, withscores=True)
+        return [(str(link), int(score)) for link, score in (rows or [])]
+    except Exception:
+        return []
 
 
 def _coerce_top(top_users, limit=5):
@@ -47,7 +64,7 @@ def _coerce_top(top_users, limit=5):
     return rows
 
 
-def build_stats_text(global_stats, top_users):
+def build_stats_text(global_stats, top_users, top_links=None):
     """Pure /stats formatter."""
     g = global_stats or {}
     dl = int(g.get("total_downloads", 0) or 0)
@@ -66,6 +83,11 @@ def build_stats_text(global_stats, top_users):
     else:
         for i, (uid, n) in enumerate(rows, 1):
             lines.append(f"{i}. `{uid}` — {n} downloads")
+    links = list(top_links or [])
+    if links:
+        lines += ["", "**Popular Links:**"]
+        for i, (link, n) in enumerate(links[:3], 1):
+            lines.append(f"{i}. `{link}` — {n} downloads")
     return "\n".join(lines)
 
 
@@ -175,7 +197,7 @@ def register(bot, ctx):
             top.sort(key=lambda x: x[1], reverse=True)
         except Exception:
             top = []
-        await m.reply(build_stats_text(g, top[:5]), parse_mode="markdown")
+        await m.reply(build_stats_text(g, top[:5], get_top_links(db, 3)), parse_mode="markdown")
 
     @bot.on(events.NewMessage(pattern=r"^/userstats(?:\s+(\d+))?", incoming=True,
                               outgoing=False, func=lambda m: is_admin(m.sender_id)))
