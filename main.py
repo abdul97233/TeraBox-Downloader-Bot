@@ -2610,14 +2610,6 @@ async def force_restart(m: UpdateNewMessage):
 
 # ==================== OWNER ONLY: /setstorage ====================
 
-@bot.on(
-    events.NewMessage(
-        pattern=r"/setstorage\s+(-?\d+)",
-        incoming=True,
-        outgoing=False,
-        from_users=[OWNER_ID],
-    )
-)
 def _read_config_storage():
     """Read PRIVATE_CHAT_ID straight from config.py file (None if unreadable)."""
     import re as _re
@@ -2646,9 +2638,40 @@ def _write_config_storage(new_id):
     return True
 
 
+@bot.on(
+    events.NewMessage(
+        pattern=r"^/setstorage\s*$",
+        incoming=True,
+        outgoing=False,
+        from_users=[OWNER_ID],
+    )
+)
+async def set_storage_usage(m: UpdateNewMessage):
+    try:
+        persisted = db.get("storage_chat_id")
+    except Exception:
+        persisted = None
+    await m.reply(
+        f"**Usage:** `/setstorage <chat_id>`\n"
+        f"Example: `/setstorage -1001684570979`\n\n"
+        f"Active: `{PRIVATE_CHAT_ID}` | Persisted: `{persisted}`"
+    )
+
+
+@bot.on(
+    events.NewMessage(
+        pattern=r"/setstorage\s+([-\u2013\u2014\u2212]?\d+)",
+        incoming=True,
+        outgoing=False,
+        from_users=[OWNER_ID],
+    )
+)
 async def set_storage(m: UpdateNewMessage):
     match = m.pattern_match
-    new_id = int(match.group(1))
+    raw = match.group(1)
+    for _dash in ("\u2013", "\u2014", "\u2212"):
+        raw = raw.replace(_dash, "-")
+    new_id = int(raw)
     global PRIVATE_CHAT_ID
     PRIVATE_CHAT_ID = new_id
     try:
