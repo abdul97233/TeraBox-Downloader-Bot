@@ -2553,12 +2553,22 @@ async def update_bot(m: UpdateNewMessage):
     try:
         cwd = os.path.dirname(os.path.abspath(__file__))
 
-        # Stash local changes (including config.py) before pulling
+        # Stash local changes (including config.py) before pulling — only if any
         await msg.edit("Saving local changes...")
-        subprocess.run(
-            ["git", "stash", "push", "-m", "auto-stash before update", "--", "config.py", "README.md"],
-            capture_output=True, text=True, cwd=cwd, timeout=10,
-        )
+        stashed = False
+        try:
+            dirty = subprocess.run(
+                ["git", "status", "--porcelain", "--", "config.py", "README.md"],
+                capture_output=True, text=True, cwd=cwd, timeout=10,
+            )
+            if dirty.returncode == 0 and dirty.stdout.strip():
+                sp = subprocess.run(
+                    ["git", "stash", "push", "-m", "auto-stash before update", "--", "config.py", "README.md"],
+                    capture_output=True, text=True, cwd=cwd, timeout=10,
+                )
+                stashed = sp.returncode == 0 and "No local changes" not in (sp.stdout + sp.stderr)
+        except Exception:
+            stashed = False
 
         # Pull latest
         await msg.edit("Pulling latest code from GitHub...")
@@ -2571,19 +2581,23 @@ async def update_bot(m: UpdateNewMessage):
 
         if result.returncode == 0:
             if "Already up to date" in output:
-                # Restore stashed config
-                subprocess.run(
-                    ["git", "stash", "pop"],
-                    capture_output=True, text=True, cwd=cwd, timeout=10,
-                )
+                # Restore stashed config (only if we stashed)
+                if stashed:
+                    subprocess.run(
+                        ["git", "stash", "pop"],
+                        capture_output=True, text=True, cwd=cwd, timeout=10,
+                    )
                 await msg.edit("Already up to date! No changes found.")
             else:
-                # Restore stashed config
-                pop = subprocess.run(
-                    ["git", "stash", "pop"],
-                    capture_output=True, text=True, cwd=cwd, timeout=10,
-                )
-                pop_warn = "" if pop.returncode == 0 else "\n\nWARNING: `git stash pop` failed — config.py may still be stashed! Check VPS."
+                # Restore stashed config (only if we stashed)
+                pop_warn = ""
+                if stashed:
+                    pop = subprocess.run(
+                        ["git", "stash", "pop"],
+                        capture_output=True, text=True, cwd=cwd, timeout=10,
+                    )
+                    if pop.returncode != 0:
+                        pop_warn = "\n\nWARNING: `git stash pop` failed — config.py may still be stashed! Check VPS."
                 # Safety: never restart into broken code
                 await msg.edit("Verifying pulled code...")
                 check = subprocess.run(
@@ -2611,11 +2625,12 @@ async def update_bot(m: UpdateNewMessage):
                 await asyncio.sleep(5)
                 os.execl(sys.executable, sys.executable, *sys.argv)
         else:
-            # Try to restore stash even on error
-            subprocess.run(
-                ["git", "stash", "pop"],
-                capture_output=True, text=True, cwd=cwd, timeout=10,
-            )
+            # Try to restore stash even on error (only if we stashed)
+            if stashed:
+                subprocess.run(
+                    ["git", "stash", "pop"],
+                    capture_output=True, text=True, cwd=cwd, timeout=10,
+                )
             await msg.edit(f"Update failed!\n\n`{errors or output}`")
     except Exception as e:
         await msg.edit(f"Update error: `{e}`")
