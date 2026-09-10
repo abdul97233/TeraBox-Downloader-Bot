@@ -1588,8 +1588,8 @@ async def cb_admin_api(e):
         )
         lines = ["**API Health**", ""]
         for name, r in res.items():
-            icon = "OK" if r["ok"] else "DOWN"
-            lines.append(f"{icon} **{name}**: status={r['status']} {r['latency_ms']}ms")
+            state = r.get("state", "UP" if r["ok"] else "DOWN")
+            lines.append(f"{state} **{name}**: status={r['status']} {r['latency_ms']}ms")
         text = "\n".join(lines) + "\n\nFull: `/apihealth`"
     except Exception as ex:
         text = f"API check failed: `{ex}`"

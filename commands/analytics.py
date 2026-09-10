@@ -146,9 +146,17 @@ async def check_api_health(api_templates, timeout=10):
             try:
                 async with sess.get(url) as r:
                     ms = int((time.monotonic() - t0) * 1000)
-                    out[key] = {"ok": r.status < 500, "latency_ms": ms, "status": r.status}
+                    if r.status in (200, 302):
+                        state = "UP"
+                    elif r.status < 500:
+                        state = "REACHABLE"
+                    else:
+                        state = "DOWN"
+                    out[key] = {"ok": r.status < 500, "state": state,
+                                "latency_ms": ms, "status": r.status}
             except Exception:
-                out[key] = {"ok": False, "latency_ms": int((time.monotonic() - t0) * 1000), "status": None}
+                out[key] = {"ok": False, "state": "DOWN",
+                            "latency_ms": int((time.monotonic() - t0) * 1000), "status": None}
     return out
 
 
@@ -237,9 +245,10 @@ def register(bot, ctx):
             return await m.reply("No API templates configured.")
         lines = ["**API Health**", ""]
         for name, r in res.items():
-            icon = "OK" if r["ok"] else "DOWN"
-            lines.append(f"{icon} **{name}**: ok={r['ok']} "
+            state = r.get("state", "UP" if r["ok"] else "DOWN")
+            lines.append(f"{state} **{name}**: ok={r['ok']} "
                          f"status={r['status']} {r['latency_ms']}ms")
+        lines += ["", "_UP = healthy | REACHABLE = server alive (probe link rejected) | DOWN = failing_"]
         await m.reply("\n".join(lines), parse_mode="markdown")
 
     @bot.on(events.NewMessage(pattern=r"^/errors(?:\s+(\d+))?", incoming=True,
