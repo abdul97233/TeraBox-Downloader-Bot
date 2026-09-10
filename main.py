@@ -359,6 +359,7 @@ async def command_help(m: UpdateNewMessage):
         [
             Button.url("📢 Channel", url="https://t.me/NTMpro"),
             Button.url("💬 Group", url="https://t.me/NTMchat"),
+            Button.url("💻 GitHub Repo", url="https://github.com/abdul97233/TeraBox-Downloader-Bot"),
         ],
     ]
     if is_admin(m.sender_id):
@@ -1007,6 +1008,7 @@ async def start(m: UpdateNewMessage):
         [
             Button.url("📢 Channel", url="https://t.me/NTMpro"),
             Button.url("💬 Group", url="https://t.me/NTMchat"),
+            Button.url("💻 GitHub Repo", url="https://github.com/abdul97233/TeraBox-Downloader-Bot"),
         ],
     ]
 
@@ -1247,6 +1249,7 @@ async def cb_setlang(e):
         [
             Button.url("📢 Channel", url="https://t.me/NTMpro"),
             Button.url("💬 Group", url="https://t.me/NTMchat"),
+            Button.url("💻 GitHub Repo", url="https://github.com/abdul97233/TeraBox-Downloader-Bot"),
         ],
     ]
     if is_admin(e.sender_id):
@@ -1274,6 +1277,7 @@ async def cb_main(e):
         [
             Button.url("📢 Channel", url="https://t.me/NTMpro"),
             Button.url("💬 Group", url="https://t.me/NTMchat"),
+            Button.url("💻 GitHub Repo", url="https://github.com/abdul97233/TeraBox-Downloader-Bot"),
         ],
     ]
     if is_admin(e.sender_id):
@@ -2912,7 +2916,7 @@ LANG_MESSAGES = {
         "thumb_removed": "✅ कस्टम थम्बनेल हटाइयो।",
         "thumb_premium": "Premium सुविधा मात्र।\nयोजना हेर्न /plan प्रयोग गर्नुहोस्।",
         "thumb_reply_photo": "कृपया **फोटो/तस्बिर** मा मात्र रिप्लाई गर्नुहोस्।",
-        "lang_set": "भाषा {lang}} मा सेट भयो।",
+        "lang_set": "भाषा {lang} मा सेट भयो।",
     },
     "hi": {
         "welcome": "स्वागत है! डाउनलोड करने के लिए TeraBox लिंक भेजें।",
