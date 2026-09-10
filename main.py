@@ -18,7 +18,7 @@ from telethon.types import Message, UpdateNewMessage
 
 from cansend import CanSend
 from config import *
-from terabox import get_files
+from terabox import get_files, get_fallback_files
 from tools import (
     add_watermark,
     convert_seconds,
@@ -1812,6 +1812,32 @@ DL_QUALITY_MAP = {
 }
 
 
+async def _retry_download_via_fallback(url, data, dest, progress_bar):
+    """Primary direct_link failed — fetch a fresh URL from fallback API, retry once."""
+    try:
+        files = await get_fallback_files(url)
+    except Exception as e:
+        log.info(f"Fallback refresh failed: {e}")
+        return False
+    if not files:
+        return False
+    name = (data.get("file_name") or "").lower()
+    alt = None
+    for f in files:
+        if (f.get("file_name") or "").lower() == name and f.get("direct_link") != data.get("direct_link"):
+            alt = f["direct_link"]
+            break
+    if not alt:
+        log.info(f"No alternate URL for `{data.get('file_name')}`")
+        return False
+    log.info(f"Retrying `{data.get('file_name')}` via fallback URL")
+    try:
+        return await download_file(alt, dest, progress_bar)
+    except Exception as e:
+        log.info(f"Fallback download failed: {e}")
+        return False
+
+
 async def handle_message(m: Message):
 
     url = get_urls_from_string(m.text)
@@ -1999,6 +2025,10 @@ async def handle_message(m: Message):
         download = await download_file(
             data["direct_link"], os.path.join(DOWNLOAD_DIR, data["file_name"]), progress_bar
         )
+        if not download:
+            download = await _retry_download_via_fallback(
+                url, data, os.path.join(DOWNLOAD_DIR, data["file_name"]), progress_bar
+            )
         total_time = time.time() - start_time
         if not download:
             return await hm.edit(
@@ -2238,6 +2268,12 @@ async def handle_message(m: Message):
                     os.path.join(DOWNLOAD_DIR, data["file_name"]),
                     progress_bar,
                 )
+                if not download:
+                    download = await _retry_download_via_fallback(
+                        url, data,
+                        os.path.join(DOWNLOAD_DIR, data["file_name"]),
+                        progress_bar,
+                    )
                 if not download:
                     done_count += 1
                     failed_count += 1
@@ -3187,6 +3223,12 @@ async def folder_download(m: UpdateNewMessage):
                 os.path.join(DOWNLOAD_DIR, data["file_name"]),
                 progress_bar,
             )
+            if not download:
+                download = await _retry_download_via_fallback(
+                    url, data,
+                    os.path.join(DOWNLOAD_DIR, data["file_name"]),
+                    progress_bar,
+                )
             if not download:
                 done_count += 1
                 failed_count += 1

@@ -179,3 +179,11 @@ async def get_data(url: str):
     if not files:
         return False
     return files[0]
+
+
+async def get_fallback_files(url: str):
+    """Async: Fetch files via fallback API ONLY (fresh alternate dl URLs).
+
+    Used to retry a download whose primary direct_link 502s.
+    """
+    return await _fetch_files_from_api(TERABOX_FALLBACK_API_TEMPLATE, url)
