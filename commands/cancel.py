@@ -38,7 +38,25 @@ def register(bot, ctx):
         ]
         await m.reply(text, parse_mode="markdown", buttons=buttons)
 
-    @bot.on(events.CallbackQuery(pattern=rb"jobx_"))
+    @bot.on(events.CallbackQuery(pattern=rb"jobx_tap"))
+    async def _tap_cancel(e):
+        """Tap-to-cancel on any progress/status message: cancels all live jobs."""
+        res = request_cancel(db, e.sender_id, cancel_all=True)
+        if res:
+            try:
+                await e.edit("❌ Download cancelled successfully.")
+            except Exception:
+                try:
+                    await e.answer("❌ Download cancelled successfully.", alert=False)
+                except Exception:
+                    pass
+        else:
+            try:
+                await e.answer("ℹ️ Nothing active — already finished.", alert=False)
+            except Exception:
+                pass
+
+    @bot.on(events.CallbackQuery(pattern=rb"jobx_(one|all|close)"))
     async def _cancel_btn(e):
         try:
             data = e.data.decode(errors="ignore")

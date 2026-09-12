@@ -387,6 +387,10 @@ async def command_help(m: UpdateNewMessage):
             Button.inline("🌐 Language", data="menu_lang"),
         ],
         [
+            Button.inline("👥 Referral", data="menu_referral"),
+            Button.inline("📊 My Stats", data="menu_mystats"),
+        ],
+        [
             Button.url("📢 Channel", url="https://t.me/NTMpro"),
             Button.url("💬 Group", url="https://t.me/NTMchat"),
             Button.url("💻 GitHub Repo", url="https://github.com/abdul97233/TeraBox-Downloader-Bot"),
@@ -1094,6 +1098,10 @@ async def start(m: UpdateNewMessage):
             Button.inline("🌐 Language", data="menu_lang"),
         ],
         [
+            Button.inline("👥 Referral", data="menu_referral"),
+            Button.inline("📊 My Stats", data="menu_mystats"),
+        ],
+        [
             Button.url("📢 Channel", url="https://t.me/NTMpro"),
             Button.url("💬 Group", url="https://t.me/NTMchat"),
             Button.url("💻 GitHub Repo", url="https://github.com/abdul97233/TeraBox-Downloader-Bot"),
@@ -1261,6 +1269,77 @@ You will receive premium instantly!
     await e.edit(text, parse_mode="markdown", buttons=buttons)
 
 
+@bot.on(events.CallbackQuery(data=b"menu_referral"))
+async def cb_referral_menu(e):
+    try:
+        from commands.referral import get_or_create_code
+        code = get_or_create_code(db, e.sender_id)
+    except Exception:
+        code = None
+    try:
+        me = await bot.get_me()
+        username = me.username or "YourBot"
+    except Exception:
+        username = "YourBot"
+    try:
+        invited = db.scard(f"ref:invited:{e.sender_id}")
+    except Exception:
+        invited = 0
+    try:
+        ok = int(db.hget("ref:ok", str(e.sender_id)) or 0)
+    except Exception:
+        ok = 0
+    link = f"https://t.me/{username}?start=ref_{code}" if code else "Unavailable right now."
+    text = (
+        "┏━━━━━━━━━━━━━━━━━⍟\n"
+        "┃  👥 𝐑𝐞𝐟𝐞𝐫𝐫𝐚𝐥𝐬\n"
+        "┗━━━━━━━━━━━━━━━━━━━━━⍟\n\n"
+        f"Your link:\n`{link}`\n\n"
+        f"Invited: **{invited}** | Successful: **{ok}**\n"
+        "Rewards: 5 → 1d Premium, 10 → 3d, 25 → 7d\n\n"
+        "Full details: /referral"
+    )
+    buttons = [[Button.inline("◀️ Back", data="menu_main")]]
+    await e.edit(text, parse_mode="markdown", buttons=buttons)
+
+
+@bot.on(events.CallbackQuery(data=b"menu_mystats"))
+async def cb_mystats_menu(e):
+    uid = e.sender_id
+    try:
+        h = db.hgetall(f"user_stats_{uid}") or {}
+    except Exception:
+        h = {}
+    def _n(*keys):
+        for k in keys:
+            try:
+                v = int(h.get(k, 0) or 0)
+                if v:
+                    return v
+            except Exception:
+                pass
+        return 0
+    success = _n("success", "total")
+    failed = _n("failed")
+    try:
+        storage = get_formatted_size(int(h.get("storage", 0) or 0))
+    except Exception:
+        storage = "?"
+    last = h.get("last_activity", "Never") or "Never"
+    text = (
+        "┏━━━━━━━━━━━━━━━━━⍟\n"
+        "┃  📊 𝐌𝐲 𝐒𝐭𝐚𝐭𝐬\n"
+        "┗━━━━━━━━━━━━━━━━━━━━━⍟\n\n"
+        f"Files: **{success}**\n"
+        f"Data: **{storage}**\n"
+        f"Successful: **{success}** | Failed: **{failed}**\n"
+        f"Last activity: **{last}**\n\n"
+        "Full details: /mystats"
+    )
+    buttons = [[Button.inline("◀️ Back", data="menu_main")]]
+    await e.edit(text, parse_mode="markdown", buttons=buttons)
+
+
 @bot.on(events.CallbackQuery(data=b"menu_tools"))
 async def cb_tools(e):
     text = """
@@ -1336,6 +1415,10 @@ async def cb_setlang(e):
             Button.inline("🌐 Language", data="menu_lang"),
         ],
         [
+            Button.inline("👥 Referral", data="menu_referral"),
+            Button.inline("📊 My Stats", data="menu_mystats"),
+        ],
+        [
             Button.url("📢 Channel", url="https://t.me/NTMpro"),
             Button.url("💬 Group", url="https://t.me/NTMchat"),
             Button.url("💻 GitHub Repo", url="https://github.com/abdul97233/TeraBox-Downloader-Bot"),
@@ -1362,6 +1445,10 @@ async def cb_main(e):
         [
             Button.inline("🛠 Tools", data="menu_tools"),
             Button.inline("🌐 Language", data="menu_lang"),
+        ],
+        [
+            Button.inline("👥 Referral", data="menu_referral"),
+            Button.inline("📊 My Stats", data="menu_mystats"),
         ],
         [
             Button.url("📢 Channel", url="https://t.me/NTMpro"),
@@ -2069,7 +2156,10 @@ async def handle_message(m: Message):
         if not check_if:
             return await m.reply(f"Please join {gr} then send me the link again.")
     
-    hm = await m.reply("Sending you the media wait...")
+    hm = await m.reply(
+        "Sending you the media wait...",
+        buttons=[[Button.inline("❌ Cancel", data="jobx_tap")]],
+    )
 
     count = db.get(f"check_{m.sender_id}")
 
@@ -2119,22 +2209,40 @@ async def handle_message(m: Message):
             valid_msgs = [msg for msg in cached_msgs if msg and msg.media]
             if valid_msgs:
                 data = files_to_process[0]
-                import json as _json2
-                try:
-                    db.set(f"cache:pending:{m.sender_id}:{shorturl}", _json2.dumps({
-                        "ids": [mm.id for mm in valid_msgs],
-                        "url": url,
-                        "file_name": data.get("file_name", "file"),
-                        "size": data.get("size", "?"),
-                    }), ex=600)
-                except Exception:
-                    pass
-                await hm.edit(
-                    "⚡ This file was already downloaded.\n\nWould you like to receive the cached copy?",
-                    buttons=[
-                        [Button.inline("✅ Send Cached File", data=f"cx_send:{shorturl}")],
-                        [Button.inline("❌ Download Again", data=f"cx_again:{shorturl}")],
-                    ],
+                user_tag = get_custom_tag(m.sender_id)
+                tag_str = f" ({user_tag})" if user_tag else ""
+                cached_caption = f"""
+┏━━━━━━━━━━⍟
+┃ 𝐍𝐓𝐌 𝐓𝐞𝐫𝐚 𝐁𝐨𝐱 𝐃𝐨𝐰𝐧𝐥𝐨𝐚𝐝𝐞𝐫 𝐁𝐨𝐭
+┗━━━━━━━━━━━━━━━━━⍟
+╔══════════⍟
+╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{caption_name(data['file_name'])}`
+╟➣𝙎𝙞𝙯𝙚: **{data['size']}**
+╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(m.sender.first_name)}{tag_str}
+╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(m.sender.username or '-')}
+╚═════════════════⍟
+         @NTMpro
+"""
+                if len(valid_msgs) == 1:
+                    await bot.send_file(
+                        m.chat.id,
+                        file=valid_msgs[0].media,
+                        caption=cached_caption,
+                        supports_streaming=True,
+                    )
+                else:
+                    for cm in valid_msgs:
+                        await bot.send_file(
+                            m.chat.id,
+                            file=cm.media,
+                            supports_streaming=True,
+                        )
+                _record_dl(m.sender_id, 0, shorturl, True)
+                await hm.delete()
+                db.set(
+                    f"check_{m.sender_id}",
+                    int(count) + 1 if count else 1,
+                    ex=3600,
                 )
                 return
         except Exception as e:
@@ -3432,7 +3540,10 @@ async def folder_download(m: UpdateNewMessage):
     if is_maintenance() and not is_admin(m.sender_id):
         return await m.reply("🔧 Bot is currently under maintenance. Please try again later.")
 
-    hm = await m.reply("Fetching folder contents...")
+    hm = await m.reply(
+        "Fetching folder contents...",
+        buttons=[[Button.inline("❌ Cancel", data="jobx_tap")]],
+    )
 
     files = await get_files(url)
     if not files:

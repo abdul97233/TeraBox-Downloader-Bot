@@ -116,7 +116,10 @@ def register(bot, ctx):
             except Exception:
                 pass
             return
-        msg = await e.reply(f"🎵 Extracting audio ({br} kbps)...")
+        msg = await e.reply(
+            f"🎵 Extracting audio ({br} kbps)...",
+            buttons=[[Button.inline("❌ Cancel", data="jobx_tap")]],
+        )
         video_path = _os.path.join(download_dir, f"mp3_{_uuid.uuid4().hex}.mp4")
         audio_path = video_path.replace(".mp4", f"_{br}k.mp3")
         try:
@@ -259,7 +262,10 @@ def register(bot, ctx):
             except Exception:
                 pass
             return
-        msg = await e.reply(f"⚙️ Processing video...\n\nResolution: {h}p\nPlease wait.")
+        msg = await e.reply(
+            f"⚙️ Processing video...\n\nResolution: {h}p\nPlease wait.",
+            buttons=[[Button.inline("❌ Cancel", data="jobx_tap")]],
+        )
         video_path = _os.path.join(download_dir, f"cmp_{_uuid.uuid4().hex}.mp4")
         out_path = video_path.replace(".mp4", f"_{h}p.mp4")
         try:
