@@ -247,10 +247,13 @@ def is_maintenance():
 
 def check_cooldown(user_id):
     """Check if user is on cooldown. Returns remaining seconds or 0."""
-    last = db.get(f"{COOLDOWN_KEY}_{user_id}")
-    if not last:
+    try:
+        last = db.get(f"{COOLDOWN_KEY}_{user_id}")
+        if not last:
+            return 0
+        elapsed = time.time() - float(last)
+    except Exception:
         return 0
-    elapsed = time.time() - float(last)
     if elapsed < DOWNLOAD_COOLDOWN_SECONDS:
         return int(DOWNLOAD_COOLDOWN_SECONDS - elapsed)
     return 0
@@ -516,15 +519,21 @@ async def list_gc(m: UpdateNewMessage):
     # Build combined list: unused first, then used
     items = []
     for code, days in unused.items():
-        days = int(days)
+        try:
+            days = int(days)
+        except (TypeError, ValueError):
+            continue
         label = "Permanent" if days == 0 else f"{days}d"
         items.append({"code": code, "status": "available", "label": label})
 
     for code, val in used.items():
-        parts = val.split(":")
+        parts = str(val or "").split(":")
         uid = parts[0] if len(parts) > 0 else "?"
         ts = parts[1] if len(parts) > 1 else "?"
-        days = int(parts[2]) if len(parts) > 2 else 0
+        try:
+            days = int(parts[2]) if len(parts) > 2 else 0
+        except (TypeError, ValueError):
+            days = 0
         label = "Permanent" if days == 0 else f"{days}d"
         items.append({"code": code, "status": "used", "label": label, "user": uid, "time": ts})
 
@@ -573,6 +582,12 @@ async def _send_gc_list(m, items, page, total_pages, total):
 
 @bot.on(events.CallbackQuery(func=lambda e: e.data and e.data.startswith(b"gcpage_")))
 async def gc_page_cb(e):
+    if not is_admin(e.sender_id):
+        try:
+            await e.answer("Access denied!", alert=True)
+        except Exception:
+            pass
+        return
     try:
         parts = e.data.decode().split("_")
         page = int(parts[1])
@@ -586,14 +601,20 @@ async def gc_page_cb(e):
 
     items = []
     for code, days in unused.items():
-        days = int(days)
+        try:
+            days = int(days)
+        except (TypeError, ValueError):
+            continue
         label = "Permanent" if days == 0 else f"{days}d"
         tag = tags.get(code, "")
         items.append({"code": code, "status": "available", "label": label, "tag": tag})
     for code, val in used.items():
-        parts = val.split(":")
+        parts = str(val or "").split(":")
         uid = parts[0] if len(parts) > 0 else "?"
-        days = int(parts[2]) if len(parts) > 2 else 0
+        try:
+            days = int(parts[2]) if len(parts) > 2 else 0
+        except (TypeError, ValueError):
+            days = 0
         label = "Permanent" if days == 0 else f"{days}d"
         tag = tags.get(code, "")
         items.append({"code": code, "status": "used", "label": label, "user": uid, "tag": tag})
@@ -675,15 +696,24 @@ async def track_gc(m: UpdateNewMessage):
     results = []
 
     for code, val in used.items():
-        parts = val.split(":")
+        parts = str(val or "").split(":")
         uid = parts[0] if len(parts) > 0 else "?"
-        ts = int(parts[1]) if len(parts) > 1 else 0
-        days = int(parts[2]) if len(parts) > 2 else 0
+        try:
+            ts = int(parts[1]) if len(parts) > 1 else 0
+        except (TypeError, ValueError):
+            ts = 0
+        try:
+            days = int(parts[2]) if len(parts) > 2 else 0
+        except (TypeError, ValueError):
+            days = 0
 
         age_hours = (now - ts) / 3600 if ts else 0
         label = "Permanent" if days == 0 else f"{days}d"
         from datetime import datetime
-        time_str = datetime.fromtimestamp(ts).strftime("%d %b %Y, %I:%M %p") if ts else "?"
+        try:
+            time_str = datetime.fromtimestamp(ts).strftime("%d %b %Y, %I:%M %p") if ts else "?"
+        except (TypeError, ValueError, OSError):
+            time_str = "?"
 
         entry = {
             "code": code, "user": uid, "days": label,
@@ -732,6 +762,12 @@ async def track_gc(m: UpdateNewMessage):
 
 @bot.on(events.CallbackQuery(func=lambda e: e.data and e.data.startswith(b"gctrack_")))
 async def gctrack_cb(e):
+    if not is_admin(e.sender_id):
+        try:
+            await e.answer("Access denied!", alert=True)
+        except Exception:
+            pass
+        return
     try:
         filter_type = e.data.decode().split("_", 1)[1]
     except Exception:
@@ -742,15 +778,24 @@ async def gctrack_cb(e):
     results = []
 
     for code, val in used.items():
-        parts = val.split(":")
+        parts = str(val or "").split(":")
         uid = parts[0] if len(parts) > 0 else "?"
-        ts = int(parts[1]) if len(parts) > 1 else 0
-        days = int(parts[2]) if len(parts) > 2 else 0
+        try:
+            ts = int(parts[1]) if len(parts) > 1 else 0
+        except (TypeError, ValueError):
+            ts = 0
+        try:
+            days = int(parts[2]) if len(parts) > 2 else 0
+        except (TypeError, ValueError):
+            days = 0
 
         age_hours = (now - ts) / 3600 if ts else 0
         label = "Permanent" if days == 0 else f"{days}d"
         from datetime import datetime
-        time_str = datetime.fromtimestamp(ts).strftime("%d %b %Y, %I:%M %p") if ts else "?"
+        try:
+            time_str = datetime.fromtimestamp(ts).strftime("%d %b %Y, %I:%M %p") if ts else "?"
+        except (TypeError, ValueError, OSError):
+            time_str = "?"
 
         if filter_type == "1h" and age_hours > 1:
             continue
@@ -1896,6 +1941,10 @@ async def demote_all_premium(m: UpdateNewMessage):
     await m.reply("All premium users demoted successfully.")
 
 
+_INFLIGHT_MSGS = 0
+_MAX_INFLIGHT_MSGS = 10
+
+
 @bot.on(
     events.NewMessage(
         incoming=True,
@@ -1907,9 +1956,18 @@ async def demote_all_premium(m: UpdateNewMessage):
     )
 )
 async def get_message(m: Message):
+    global _INFLIGHT_MSGS
+    if _INFLIGHT_MSGS >= _MAX_INFLIGHT_MSGS:
+        return await m.reply("⏳ Server busy — please try again in a moment.")
+    _INFLIGHT_MSGS += 1
     _t = asyncio.create_task(handle_message(m))
 
     def _swallow(t):
+        global _INFLIGHT_MSGS
+        try:
+            _INFLIGHT_MSGS = max(_INFLIGHT_MSGS - 1, 0)
+        except Exception:
+            pass
         try:
             exc = t.exception()
         except asyncio.CancelledError:
@@ -2104,7 +2162,7 @@ async def handle_message(m: Message):
                 f"Sorry! File type `{file_ext}` is not supported.\nSupported: {supported}"
             )
 
-        if int(data["sizebytes"]) > 524288000 and not is_admin(m.sender_id) and not is_premium:
+        if int(data.get("sizebytes", 0) or 0) > 524288000 and not is_admin(m.sender_id) and not is_premium:
             return await hm.edit(
                 f"Sorry! File is too big. I can download only 500MB and this file is of {data['size']} ."
             )
@@ -2177,7 +2235,7 @@ async def handle_message(m: Message):
                     ".roq", ".mng", ".ogm", ".trp", ".tp", ".pva",
                 ])
         wm_limit = 500_000_000 if not is_premium else 200_000_000
-        if 10240 < file_size < wm_limit and not skip_wm:
+        if fname_lower.endswith(".mp4") and 10240 < file_size < wm_limit and not skip_wm:
             try:
                 await hm.edit(f"✅ Downloaded `{data['file_name']}` — adding watermark...")
                 await asyncio.wait_for(
@@ -2452,7 +2510,7 @@ async def handle_message(m: Message):
                     ".roq", ".mng", ".ogm", ".trp", ".tp", ".pva",
                 ])
                 wm_limit = 200_000_000
-                if 10240 < file_size < wm_limit and not skip_wm:
+                if fname_lower.endswith(".mp4") and 10240 < file_size < wm_limit and not skip_wm:
                     try:
                         await asyncio.wait_for(
                             asyncio.get_event_loop().run_in_executor(None, add_watermark, download, _mjob),
@@ -2496,8 +2554,8 @@ async def handle_message(m: Message):
                     )
                     if api_res.get("ok"):
                         sent_id = api_res["result"]["message_id"]
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.info(f"Multi Bot API upload failed: {e}")
 
                 if sent_id is None:
                     try:
@@ -2508,8 +2566,8 @@ async def handle_message(m: Message):
                             progress_callback=progress_bar,
                         )
                         sent_id = file.id
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.info(f"Multi Telethon upload failed: {e}")
 
                 done_count += 1
                 if sent_id:
@@ -2545,6 +2603,20 @@ async def handle_message(m: Message):
 
                     _record_dl(m.sender_id, int(data.get("sizebytes", 0) or 0), shorturl, True)
                     unregister_job(db, m.sender_id, _mjob["id"])
+                    try:
+                        import json as _json2
+                        _he = _json2.dumps({
+                            "file": data["file_name"], "size": data["size"],
+                            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        })
+                        _ex = db.get(f"history_{m.sender_id}")
+                        _hl = _json2.loads(_ex) if _ex else []
+                        _hl.append(_he)
+                        if len(_hl) > 50:
+                            _hl = _hl[-50:]
+                        db.set(f"history_{m.sender_id}", _json2.dumps(_hl), ex=2592000)
+                    except Exception:
+                        pass
                 else:
                     failed_count += 1
                     unregister_job(db, m.sender_id, _mjob["id"])
@@ -3461,7 +3533,7 @@ async def folder_download(m: UpdateNewMessage):
                     ".dav", ".hdv", ".svi", ".swf", ".amv", ".nsv",
                     ".roq", ".mng", ".ogm", ".trp", ".tp", ".pva",
                 ])
-            if 10240 < file_size < wm_limit and not skip_wm:
+            if fname_lower.endswith(".mp4") and 10240 < file_size < wm_limit and not skip_wm:
                 try:
                     await asyncio.wait_for(
                         asyncio.get_event_loop().run_in_executor(None, add_watermark, download, _fjob),
@@ -3510,8 +3582,8 @@ async def folder_download(m: UpdateNewMessage):
                 )
                 if api_res.get("ok"):
                     sent_id = api_res["result"]["message_id"]
-            except Exception:
-                pass
+            except Exception as e:
+                log.info(f"Folder Bot API upload failed: {e}")
 
             if sent_id is None:
                 try:
@@ -3522,8 +3594,8 @@ async def folder_download(m: UpdateNewMessage):
                         progress_callback=progress_bar,
                     )
                     sent_id = file.id
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.info(f"Folder Telethon upload failed: {e}")
 
             done_count += 1
             if sent_id:
@@ -3574,34 +3646,8 @@ async def folder_download(m: UpdateNewMessage):
 
 
 # ==================== BAN SYSTEM ====================
-
-@bot.on(
-    events.NewMessage(
-        pattern=r"/ban\s+(\d+)",
-        incoming=True,
-        outgoing=False,
-        func=lambda m: is_admin(m.sender_id),
-    )
-)
-async def ban_user(m: UpdateNewMessage):
-    user_id = m.pattern_match.group(1)
-    db.sadd(BANNED_USERS_KEY, user_id)
-    await m.reply(f"🚫 Banned user `{user_id}`.")
-
-
-@bot.on(
-    events.NewMessage(
-        pattern=r"/unban\s+(\d+)",
-        incoming=True,
-        outgoing=False,
-        func=lambda m: is_admin(m.sender_id),
-    )
-)
-async def unban_user(m: UpdateNewMessage):
-    user_id = m.pattern_match.group(1)
-    db.srem(BANNED_USERS_KEY, user_id)
-    await m.reply(f"✅ Unbanned user `{user_id}`.")
-
+# NOTE: /ban + /unban now live in commands/admin_users.py (with /finduser etc).
+# Old handlers removed to avoid double replies.
 
 @bot.on(
     events.NewMessage(
@@ -4058,6 +4104,28 @@ def _apply_api_templates(primary=None, fallback=None):
         except Exception:
             pass
     return {"primary": _tb.TERABOX_API_TEMPLATE, "fallback": _tb.TERABOX_FALLBACK_API_TEMPLATE}
+
+
+def _apply_saved_api_templates():
+    """Boot: re-apply API templates persisted via /setapi."""
+    try:
+        import terabox as _tb
+        for slot, attr in (("primary", "TERABOX_API_TEMPLATE"),
+                           ("fallback", "TERABOX_FALLBACK_API_TEMPLATE")):
+            try:
+                saved = db.get(f"api_template:{slot}")
+            except Exception:
+                saved = None
+            if saved and "{url}" in str(saved):
+                setattr(_tb, attr, str(saved))
+    except Exception as e:
+        try:
+            log.warning(f"saved API templates not applied: {e}")
+        except Exception:
+            pass
+
+
+_apply_saved_api_templates()
 
 try:
     from commands.maintenance import register as _reg_maint

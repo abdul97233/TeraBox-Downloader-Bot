@@ -50,6 +50,10 @@ def track_download(db, user_id, size_bytes, link=None, ok=True):
                     db.zincrby(LINK_COUNTS_KEY, 1, str(link)[:120])
                 except Exception:
                     pass
+                try:
+                    db.zremrangebyrank(LINK_COUNTS_KEY, 0, -501)
+                except Exception:
+                    pass
         else:
             try:
                 db.hincrby(ukey, "failed", 1)

@@ -177,9 +177,9 @@ def register(bot, ctx):
         elif w:
             await m.reply(w)
         try:
-            await download_single(m, f)
-        except TypeError:
             await download_single(m)
+        except TypeError:
+            await download_single(m, f)
 
     @bot.on(events.NewMessage(pattern=r"/preview\s+(\S+)", incoming=True, outgoing=False))
     async def _preview(m):
