@@ -2191,6 +2191,7 @@ async def handle_message(m: Message):
         if dl_quality and dl_quality in DL_QUALITY_MAP:
             height, crf = DL_QUALITY_MAP[dl_quality]
             compressed_path = download + f".{dl_quality}.mp4"
+            _job["files"].append(compressed_path)
             try:
                 await hm.edit(f"✅ Downloaded `{data['file_name']}` — compressing to {dl_quality}...")
                 cmd = [

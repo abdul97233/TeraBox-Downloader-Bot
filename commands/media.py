@@ -173,7 +173,7 @@ def register(bot, ctx):
                 pass
         except Exception:
             try:
-                await msg.edit("❌ Audio extraction failed.")
+                await msg.edit("❌ Media processing failed.")
             except Exception:
                 pass
         finally:
@@ -319,7 +319,7 @@ def register(bot, ctx):
                 pass
         except Exception:
             try:
-                await msg.edit("❌ Video processing failed.")
+                await msg.edit("❌ Media processing failed.")
             except Exception:
                 pass
         finally:
