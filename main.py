@@ -2458,7 +2458,7 @@ async def handle_message(m: Message):
             try:
                 file = await bot.send_file(
                     PRIVATE_CHAT_ID, file=download, thumb=thumbnail if thumbnail else None,
-                    progress_callback=progress_bar, caption=caption, video=True,
+                    progress_callback=lambda c, t: progress_bar(c, t, "Uploading"), caption=caption, video=True,
                     supports_streaming=True, duration=vduration, attributes=[], spoiler=True,
                 )
                 sent_id = file.id
@@ -2689,7 +2689,7 @@ async def handle_message(m: Message):
                             PRIVATE_CHAT_ID, file=download, caption=caption,
                             video=True, supports_streaming=True, spoiler=True,
                             thumb=_mthumb if _mthumb and os.path.isfile(_mthumb) else None,
-                            progress_callback=progress_bar,
+                            progress_callback=lambda c, t: progress_bar(c, t, "Uploading"),
                         )
                         sent_id = file.id
                     except Exception as e:
@@ -3721,7 +3721,7 @@ async def folder_download(m: UpdateNewMessage):
                         PRIVATE_CHAT_ID, file=download, caption=caption,
                         video=True, supports_streaming=True, spoiler=True,
                         thumb=_fthumb if _fthumb and os.path.isfile(_fthumb) else None,
-                        progress_callback=progress_bar,
+                        progress_callback=lambda c, t: progress_bar(c, t, "Uploading"),
                     )
                     sent_id = file.id
                 except Exception as e:
