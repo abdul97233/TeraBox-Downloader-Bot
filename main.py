@@ -1357,6 +1357,7 @@ async def cb_tools(e):
 `/folder <link>` — Entire folder (⭐)
 `/quick <link>` — Fast single file
 `/preview <link>` — Preview folder
+`/search <text>` — Search the library
 `/mystatus` — Your status
 
 **🎵 Media Tools:**
@@ -2484,6 +2485,13 @@ async def handle_message(m: Message):
                     db.set(shorturl, f"{existing},{sent_id}")
                 else:
                     db.set(shorturl, sent_id)
+            try:
+                if callable(globals().get("_lib_index")):
+                    globals()["_lib_index"](db, sent_id, data["file_name"],
+                                            data.get("size", "?"),
+                                            int(data.get("sizebytes", 0) or 0))
+            except Exception:
+                pass
 
             fwd_kwargs = dict(
                 from_peer=PRIVATE_CHAT_ID, id=[sent_id], to_peer=m.chat.id,
@@ -2707,6 +2715,13 @@ async def handle_message(m: Message):
                             db.set(shorturl, f"{existing},{sent_id}")
                         else:
                             db.set(shorturl, sent_id)
+                    try:
+                        if callable(globals().get("_lib_index")):
+                            globals()["_lib_index"](db, sent_id, data["file_name"],
+                                                    data.get("size", "?"),
+                                                    int(data.get("sizebytes", 0) or 0))
+                    except Exception:
+                        pass
 
                     fwd_kwargs = dict(
                         from_peer=PRIVATE_CHAT_ID, id=[sent_id], to_peer=m.chat.id,
@@ -3273,6 +3288,7 @@ async def admin_commands(m: UpdateNewMessage):
 /reloadconfig — Reload API templates
 /backup — Full Redis snapshot
 /restore — Restore (reply to backup file)
+/reindex — Rebuild file library (owner)
 /setplan `<text>` — Update plan text
 /cleandownloads — Clean downloads folder
 
@@ -3285,6 +3301,7 @@ async def admin_commands(m: UpdateNewMessage):
 /folder `<link>` — Download entire folder (premium)
 /quick `<link>` — Fast single-file download
 /preview `<link>` — Preview first 3 files
+/search `<name>` — Find files in the library
 /mystatus — Your premium/tag/stats
 /mystats — Download statistics
 /referral — Invite friends, earn Premium
@@ -3734,6 +3751,13 @@ async def folder_download(m: UpdateNewMessage):
             if sent_id:
                 sent_count += 1
                 _record_dl(m.sender_id, int(data.get("sizebytes", 0) or 0), url, True)
+                try:
+                    if callable(globals().get("_lib_index")):
+                        globals()["_lib_index"](db, sent_id, data["file_name"],
+                                                data.get("size", "?"),
+                                                int(data.get("sizebytes", 0) or 0))
+                except Exception:
+                    pass
                 try:
                     await bot(ForwardMessagesRequest(
                         from_peer=PRIVATE_CHAT_ID, id=[sent_id],
@@ -4413,12 +4437,24 @@ except Exception as e:
     log.warning(f"backup pack not loaded: {e}")
 
 try:
+    from commands.library import register as _reg_library
+    _reg_library(bot, {"db": db, "is_admin": is_admin, "OWNER_ID": OWNER_ID,
+                       "storage_chat": lambda: globals().get("PRIVATE_CHAT_ID")})
+    _loaded_packs.append("library")
+except Exception as e:
+    log.warning(f"library pack not loaded: {e}")
+
+try:
     from commands.cancel import register as _reg_cancel
     _reg_cancel(bot, {"db": db})
     _loaded_packs.append("cancel")
 except Exception as e:
     log.warning(f"cancel pack not loaded: {e}")
 
+try:
+    from commands.library import index_file as _lib_index
+except Exception:
+    _lib_index = None
 try:
     from commands.cacheux import register as _reg_cacheux
     _reg_cacheux(bot, {"db": db, "get_custom_tag": get_custom_tag,
@@ -4503,7 +4539,7 @@ async def _boot_notify():
             "✅ **System Online**\n\n"
             f"🆔 Build: `{sha}` (#{boots})\n"
             f"🕒 Started: `{started}`\n"
-            f"📦 Packs: `{packs}/11 loaded`\n"
+            f"📦 Packs: `{packs}/12 loaded`\n"
             f"💾 Storage: `{PRIVATE_CHAT_ID}`\n"
             f"🛠 Maintenance: `{maint}`"
         )

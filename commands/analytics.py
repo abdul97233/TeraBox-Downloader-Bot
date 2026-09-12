@@ -113,7 +113,8 @@ def build_stats_text(global_stats, top_users, top_links=None):
              f"**Total Downloads:** {dl}",
              f"**Total Users:** {users}"]
     for k, label in (("active_today", "Active Today"), ("premium_count", "Premium Users"),
-                     ("banned_count", "Banned Users"), ("gift_cards", "Gift Cards")):
+                     ("banned_count", "Banned Users"), ("gift_cards", "Gift Cards"),
+                     ("lib_hits", "Library Hits")):
         if k in g and g[k] is not None:
             lines.append(f"**{label}:** {g[k]}")
     lines += ["", "**Top 5 Users:**"]
@@ -243,6 +244,10 @@ def register(bot, ctx):
             pass
         try:
             g["gift_cards"] = db.hlen("gift_cards")
+        except Exception:
+            pass
+        try:
+            g["lib_hits"] = int(db.hget(STATS_KEY, "lib_hits") or 0)
         except Exception:
             pass
         top = []
