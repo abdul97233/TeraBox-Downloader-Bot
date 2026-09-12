@@ -214,9 +214,19 @@ def register(bot, ctx):
     async def _broadcast(m):
         if owner_id is None or int(m.sender_id) != int(owner_id):
             return await m.reply("Owner only.")
-        text = (m.text or "").split("/broadcast", 1)[1].strip() if "/broadcast" in (m.text or "") else ""
-        if not text:
-            return await m.reply("**Usage:** `/broadcast <message>`")
+        # Reply mode: forward the replied message as-is (format + buttons kept)
+        fwd_src = None
+        if m.is_reply:
+            try:
+                fwd_src = await m.get_reply_message()
+            except Exception:
+                fwd_src = None
+            if fwd_src is None:
+                return await m.reply("Could not read the replied message.")
+        else:
+            text = (m.text or "").split("/broadcast", 1)[1].strip() if "/broadcast" in (m.text or "") else ""
+            if not text:
+                return await m.reply("**Usage:** `/broadcast <message>`\nOr reply to any message with `/broadcast`.")
         if not get_all_users:
             return await m.reply("Broadcast source not configured.")
         res = get_all_users()
@@ -225,16 +235,22 @@ def register(bot, ctx):
         ids = []
         for u in (res or []):
             try:
-                ids.append(int(getattr(u, "id", u)))
+                uid = int(getattr(u, "id", u))
+                if uid != int(m.sender_id):
+                    ids.append(uid)
             except Exception:
                 continue
-        chunks = broadcast_split(ids, text)
-        status = await m.reply(f"Broadcasting to {len(ids)} users...")
+        chunks = broadcast_split(ids, "")
+        mode = "forward" if fwd_src else "text"
+        status = await m.reply(f"Broadcasting ({mode}) to {len(ids)} users...")
         sent = failed = 0
         for ch in chunks:
             for uid in ch:
                 try:
-                    await bot.send_message(uid, text)
+                    if fwd_src:
+                        await bot.forward_messages(uid, fwd_src)
+                    else:
+                        await bot.send_message(uid, text)
                     sent += 1
                 except Exception:
                     failed += 1
@@ -243,4 +259,5 @@ def register(bot, ctx):
             db.incr("stats:broadcasts")
         except Exception:
             pass
-        await status.edit(f"**Broadcast Complete**\nTotal: **{len(ids)}**\nSent: **{sent}**\nFailed: **{failed}**", parse_mode="markdown")
+        note = "" if not failed else "\nFailed = blocked/deleted accounts."
+        await status.edit(f"**Broadcast Complete**\nTotal: **{len(ids)}**\nSent: **{sent}**\nFailed: **{failed}**{note}", parse_mode="markdown")
