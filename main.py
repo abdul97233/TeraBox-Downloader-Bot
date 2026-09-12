@@ -2990,8 +2990,8 @@ async def admin_commands(m: UpdateNewMessage):
 /cleandownloads — Clean downloads folder
 
 **── Media Tools ──**
-/mp3 — Reply to video → extract audio
-/compress `[low|mid]` — Reply to video → compress
+/mp3 — Reply to video → bitrate menu (128/192/256/320)
+/compress — Reply to video → resolution menu (480/720/1080)
 /dl `<link>` — Download original quality
 /dl `720p` `<link>` — Download + compress 720p
 /dl `480p` `<link>` — Download + compress 480p
@@ -3663,161 +3663,13 @@ async def set_plan(m: UpdateNewMessage):
 
 
 # ==================== AUDIO EXTRACTOR — /mp3 ====================
-
-@bot.on(
-    events.NewMessage(
-        pattern=r"^/mp3$",
-        incoming=True,
-        outgoing=False,
-    )
-)
-async def mp3_reply_handler(m: UpdateNewMessage):
-    if not m.is_reply:
-        return await m.reply(
-            "Usage: Reply to a video with `/mp3`\n\n"
-            "Steps:\n"
-            "1. Send or forward a video\n"
-            "2. Reply to it with `/mp3`\n"
-            "3. Wait for audio"
-        )
-
-    replied = await m.get_reply_message()
-    if not replied:
-        return await m.reply("Could not find the replied message. Try again.")
-    if not replied.media:
-        return await m.reply("Replied message has no media.")
-
-    import shutil as _shutil
-    if not _shutil.which("ffmpeg"):
-        return await m.reply("ffmpeg not installed on server.")
-
-    msg = await m.reply("Extracting audio...")
-    video_path = None
-    audio_path = None
-    try:
-        os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-        video_path = os.path.join(DOWNLOAD_DIR, f"mp3_{uuid4().hex}.mp4")
-        audio_path = video_path.replace(".mp4", ".mp3")
-
-        await bot.download_media(replied, video_path)
-
-        cmd = [
-            "ffmpeg", "-y", "-i", video_path,
-            "-vn", "-acodec", "libmp3lame", "-ab", "192k",
-            "-ar", "44100", audio_path,
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-
-        if result.returncode != 0 or not os.path.isfile(audio_path):
-            return await msg.edit("Failed to extract audio. The file may not be a valid video.")
-
-        original_size = os.path.getsize(video_path) / (1024 * 1024)
-        audio_size = os.path.getsize(audio_path) / (1024 * 1024)
-
-        caption = replied.text or "Audio"
-        await bot.send_file(
-            m.chat.id,
-            file=audio_path,
-            caption=f"Audio extracted!\nOriginal: {original_size:.1f}MB -> Audio: {audio_size:.1f}MB",
-            voice_note=True,
-        )
-        await msg.delete()
-    except asyncio.TimeoutError:
-        await msg.edit("Audio extraction timed out. File too large.")
-    except Exception as e:
-        await msg.edit(f"Failed: {e}")
-    finally:
-        for f in [video_path, audio_path]:
-            if f:
-                try:
-                    os.unlink(f)
-                except Exception:
-                    pass
+# NOTE: /mp3 now lives in commands/media.py (bitrate menu 128/192/256/320).
+# The old fixed-192k handler was removed to avoid double replies.
 
 
 # ==================== VIDEO COMPRESS — /compress ====================
-
-@bot.on(
-    events.NewMessage(
-        pattern=r"^/compress(?:\s+(\w+))?$",
-        incoming=True,
-        outgoing=False,
-    )
-)
-async def compress_reply_handler(m: UpdateNewMessage):
-    if not m.is_reply:
-        return await m.reply(
-            "Usage: Reply to a video with `/compress`\n\n"
-            "Options:\n"
-            "- `/compress` — Normal compression (720p)\n"
-            "- `/compress low` — Heavy compression (480p)\n\n"
-            "Example:\n"
-            "1. Send a video\n"
-            "2. Reply to it with `/compress low`\n"
-            "3. Get compressed video"
-        )
-
-    quality = (m.pattern_match.group(1) or "mid").lower()
-    replied = await m.get_reply_message()
-    if not replied:
-        return await m.reply("Could not find the replied message. Try again.")
-    if not replied.media:
-        return await m.reply("Replied message has no media.")
-
-    import shutil as _shutil
-    if not _shutil.which("ffmpeg"):
-        return await m.reply("ffmpeg not installed on server.")
-
-    crf_map = {"low": 32, "mid": 28, "high": 23}
-    crf = crf_map.get(quality, 28)
-    res_map = {"low": "854:-2", "mid": "1280:-2", "high": "1920:-2"}
-    res = res_map.get(quality, "1280:-2")
-
-    msg = await m.reply(f"Compressing video ({quality})... This may take a while.")
-    video_path = None
-    out_path = None
-    try:
-        os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-        video_path = os.path.join(DOWNLOAD_DIR, f"compress_{uuid4().hex}.mp4")
-        out_path = video_path.replace(".mp4", "_compressed.mp4")
-
-        await bot.download_media(replied, video_path)
-
-        cmd = [
-            "ffmpeg", "-y", "-i", video_path,
-            "-vf", f"scale={res}",
-            "-c:v", "libx264", "-crf", str(crf),
-            "-preset", "fast", "-c:a", "aac", "-b:a", "128k",
-            out_path,
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-
-        if result.returncode != 0 or not os.path.isfile(out_path):
-            return await msg.edit("Compression failed. The file may not be a valid video.")
-
-        original_size = os.path.getsize(video_path) / (1024 * 1024)
-        compressed_size = os.path.getsize(out_path) / (1024 * 1024)
-        saved = round(original_size - compressed_size, 2)
-
-        caption = replied.text or "Compressed video"
-        await bot.send_file(
-            m.chat.id,
-            file=out_path,
-            caption=f"Compressed!\nOriginal: {original_size:.1f}MB -> Compressed: {compressed_size:.1f}MB\nSaved: {saved:.1f}MB",
-            supports_streaming=True,
-        )
-        await msg.delete()
-    except asyncio.TimeoutError:
-        await msg.edit("Compression timed out. File too large.")
-    except Exception as e:
-        await msg.edit(f"Failed: {e}")
-    finally:
-        for f in [video_path, out_path]:
-            if f:
-                try:
-                    os.unlink(f)
-                except Exception:
-                    pass
+# NOTE: /compress now lives in commands/media.py (resolution menu, no upscale).
+# The old fixed low/mid/high handler was removed to avoid double replies.
 
 
 # ==================== AUTO-ANNOUNCE / SCHEDULED BROADCAST ====================
@@ -4286,6 +4138,15 @@ try:
 except Exception as e:
     log.warning(f"cacheux pack not loaded: {e}")
 
+try:
+    from commands.media import register as _reg_media
+    _reg_media(bot, {"db": db, "is_admin": is_admin,
+                     "is_maintenance": is_maintenance,
+                     "download_dir": DOWNLOAD_DIR})
+    _loaded_packs.append("media")
+except Exception as e:
+    log.warning(f"media pack not loaded: {e}")
+
 # Start the cleanup task before running the bot
 cleanup_task = bot.loop.create_task(auto_cleanup_downloads())
 
@@ -4326,7 +4187,7 @@ async def _boot_notify():
             "✅ **System Online**\n\n"
             f"🆔 Build: `{sha}` (#{boots})\n"
             f"🕒 Started: `{started}`\n"
-            f"📦 Packs: `{packs}/8 loaded`\n"
+            f"📦 Packs: `{packs}/9 loaded`\n"
             f"💾 Storage: `{PRIVATE_CHAT_ID}`\n"
             f"🛠 Maintenance: `{maint}`"
         )
