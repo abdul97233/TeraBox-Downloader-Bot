@@ -2127,9 +2127,16 @@ async def _retry_download_via_fallback(url, data, dest, progress_bar):
 async def _fail_single_dl(db, shorturl, hm, text, uid, job_id):
     """Failed download: notify waiters, release claim, unregister, record, edit."""
     try:
+        from utils.flood import patient_send as _psf
+    except Exception:
+        _psf = None
+    try:
         for _w in pop_waiters(db, shorturl):
             try:
-                await bot.send_message(_w, "⏳ The file you were waiting for failed. Please resend the link.")
+                if _psf is not None:
+                    await _psf(bot, _w, "⏳ The file you were waiting for failed. Please resend the link.")
+                else:
+                    await bot.send_message(_w, "⏳ The file you were waiting for failed. Please resend the link.")
             except Exception:
                 pass
     except Exception:
@@ -2559,21 +2566,22 @@ async def handle_message(m: Message):
 
             _record_dl(m.sender_id, int(data.get("sizebytes", 0) or 0), shorturl, True)
             try:
-                from utils.flood import patient_forward as _pfw
+                from utils.flood import patient_forward as _pfw, patient_send as _psw
             except Exception:
-                _pfw = None
+                _pfw, _psw = None, None
             for _wchat in pop_waiters(db, shorturl):
-                try:
-                    if _pfw is not None:
-                        await _pfw(bot, from_peer=PRIVATE_CHAT_ID, id=[sent_id],
-                                   to_peer=_wchat, drop_author=True, background=True)
-                    else:
-                        await bot(ForwardMessagesRequest(
-                            from_peer=PRIVATE_CHAT_ID, id=[sent_id], to_peer=_wchat,
-                            drop_author=True, background=True,
-                        ))
-                except Exception:
-                    pass
+                _done = False
+                if _pfw is not None:
+                    try:
+                        _done = await _pfw(bot, from_peer=PRIVATE_CHAT_ID, id=[sent_id],
+                                           to_peer=_wchat, drop_author=True, background=True)
+                    except Exception:
+                        _done = False
+                if not _done and _psw is not None:
+                    try:
+                        await _psw(bot, _wchat, "📥 A file you waited for is ready — resend the link to receive it.")
+                    except Exception:
+                        pass
             release_inflight(db, shorturl)
             unregister_job(db, m.sender_id, _job["id"])
             import json as _json
@@ -2780,7 +2788,8 @@ async def handle_message(m: Message):
                         return
 
                     try:
-                        await m.reply(f"✅ `{data['file_name']}` sent!")
+                        from utils.flood import patient_reply as _pr
+                        await _pr(m, f"✅ `{data['file_name']}` sent!")
                     except Exception:
                         pass
 

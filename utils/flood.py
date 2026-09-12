@@ -76,6 +76,50 @@ async def patient_edit(msg, text, max_wait=60, **kw):
             return False
 
 
+async def patient_reply(target, text, max_wait=45, **kw):
+    """msg.reply with one bounded retry. Returns True/False, never raises."""
+    try:
+        await target.reply(text, **kw)
+        return True
+    except Exception as e:
+        if not _is_flood(e):
+            return False
+        note_flood(_secs(e))
+        try:
+            await _asyncio.sleep(min(_secs(e), int(max_wait)))
+        except Exception:
+            return False
+        try:
+            await target.reply(text, **kw)
+            return True
+        except Exception as e2:
+            if _is_flood(e2):
+                note_flood(_secs(e2))
+            return False
+
+
+async def patient_send(bot, entity, text, max_wait=45, **kw):
+    """bot.send_message with one bounded retry. Returns True/False, never raises."""
+    try:
+        await bot.send_message(entity, text, **kw)
+        return True
+    except Exception as e:
+        if not _is_flood(e):
+            return False
+        note_flood(_secs(e))
+        try:
+            await _asyncio.sleep(min(_secs(e), int(max_wait)))
+        except Exception:
+            return False
+        try:
+            await bot.send_message(entity, text, **kw)
+            return True
+        except Exception as e2:
+            if _is_flood(e2):
+                note_flood(_secs(e2))
+            return False
+
+
 async def patient_forward(bot, max_wait=120, **kw):
     """Forward with one bounded retry. Returns True/False, never raises
     (CancelledError still propagates so /cancel keeps working)."""
