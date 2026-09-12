@@ -3104,7 +3104,11 @@ async def update_bot(m: UpdateNewMessage):
     )
 )
 async def restart_bot(m: UpdateNewMessage):
-    msg = await m.reply("Restarting bot...")
+    try:
+        from utils.flood import patient_reply as _prr
+        await _prr(m, "Restarting bot...")
+    except Exception:
+        pass
     try:
         db.set("boot_notify", m.chat.id)
     except Exception:
@@ -3124,7 +3128,15 @@ async def restart_bot(m: UpdateNewMessage):
     )
 )
 async def force_restart(m: UpdateNewMessage):
-    msg = await m.reply("Force restarting bot...")
+    try:
+        from utils.flood import patient_reply as _prf
+        await _prf(m, "Force restarting bot...")
+    except Exception:
+        pass
+    try:
+        db.set("boot_notify", m.chat.id)
+    except Exception:
+        pass
     await asyncio.sleep(2)
     os.execl(sys.executable, sys.executable, *sys.argv)
 
