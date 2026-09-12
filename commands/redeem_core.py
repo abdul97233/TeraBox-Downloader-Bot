@@ -9,6 +9,19 @@ import time as _time
 from datetime import datetime as _datetime
 
 
+def identity_block(first_name, last_name, username, user_id):
+    """Who-redeemed block appended to user confirmations."""
+    try:
+        full = f"{first_name or ''} {last_name or ''}".strip() or "-"
+    except Exception:
+        full = "-"
+    try:
+        uname = f"@{username}" if username else "@-"
+    except Exception:
+        uname = "@-"
+    return f"\n\nRedeemed by: {full} ({uname})\nID: `{user_id}`"
+
+
 async def redeem_code(*, db, gc_key, gc_tags_key, gc_used_key,
                       code, user_id,
                       grant_premium_fn, set_tag_fn, is_premium_fn):

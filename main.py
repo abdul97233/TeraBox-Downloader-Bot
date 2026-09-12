@@ -848,23 +848,26 @@ async def gctrack_cb(e):
     )
 )
 async def redeem_gc(m: UpdateNewMessage):
-    from commands.redeem_core import redeem_code as _core
+    from commands.redeem_core import redeem_code as _core, identity_block as _iblock
     ok, text, info = await _core(
         db=db, gc_key=GC_REDIS_KEY, gc_tags_key=GC_TAGS_KEY, gc_used_key=GC_USED_KEY,
         code=m.pattern_match.group(1), user_id=m.sender_id,
         grant_premium_fn=grant_premium, set_tag_fn=set_custom_tag,
         is_premium_fn=is_premium_user,
     )
+    try:
+        user = await bot.get_entity(m.sender_id)
+        name = user.first_name or "-"
+        last = getattr(user, "last_name", None)
+        username = user.username if user.username else "-"
+    except Exception:
+        name, last, username = "-", None, "-"
+    if ok:
+        text += _iblock(name, last, username if username != "-" else None, m.sender_id)
     await m.reply(text, parse_mode="markdown")
     if not (ok and info):
         return
     # Notify admins
-    try:
-        user = await bot.get_entity(m.sender_id)
-        name = user.first_name
-        username = user.username if user.username else "-"
-    except Exception:
-        name, username = "-", "-"
     tag_msg = f"\nTag: {info['tag']}" if info.get("tag") else ""
     for admin_id in get_all_admins():
         try:

@@ -138,6 +138,19 @@ async def _auto_redeem_button(e, bot, ctx):
         await e.answer("Redeemed!" if ok else "Failed", alert=False)
     except Exception:
         pass
+    if ok:
+        try:
+            from commands.redeem_core import identity_block as _iblock
+            try:
+                u = await bot.get_entity(int(e.sender_id))
+                _fn = u.first_name or "-"
+                _ln = getattr(u, "last_name", None)
+                _un = u.username or None
+            except Exception:
+                _fn, _ln, _un = "-", None, None
+            text += _iblock(_fn, _ln, _un, int(e.sender_id))
+        except Exception:
+            pass
     if ok and info:
         try:
             notify = ctx.get("notify_redeem") if isinstance(ctx, dict) else getattr(ctx, "notify_redeem", None)
