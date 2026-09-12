@@ -2,7 +2,17 @@
 
 from telethon import Button, events
 
+try:
+    from telethon.tl import types as _t
+    _CLEAR = _t.ReplyInlineMarkup(rows=[])
+except Exception:
+    _CLEAR = None
+
 from utils.jobs import list_jobs, request_cancel
+
+
+def _clr():
+    return {"buttons": _CLEAR} if _CLEAR is not None else {}
 
 
 def _job_lines(jobs):
@@ -44,7 +54,7 @@ def register(bot, ctx):
         res = request_cancel(db, e.sender_id, cancel_all=True)
         if res:
             try:
-                await e.edit("❌ Download cancelled successfully.")
+                await e.edit("❌ Download cancelled successfully.", **_clr())
             except Exception:
                 try:
                     await e.answer("❌ Download cancelled successfully.", alert=False)
@@ -78,7 +88,7 @@ def register(bot, ctx):
             except Exception:
                 pass
             try:
-                await e.edit(f"❌ Cancelled {len(res)} job(s).")
+                await e.edit(f"❌ Cancelled {len(res)} job(s).", **_clr())
             except Exception:
                 pass
             return
@@ -93,7 +103,7 @@ def register(bot, ctx):
             except Exception:
                 pass
             try:
-                await e.edit(msg)
+                await e.edit(msg, **_clr())
             except Exception:
                 pass
             return
