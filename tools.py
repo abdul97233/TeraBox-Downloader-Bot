@@ -216,10 +216,14 @@ def get_video_info(file_path: str) -> dict:
 
 
 def escape_markdown(text: str) -> str:
-    """Escape Telegram legacy Markdown special characters (V1)."""
+    """Escape Telegram legacy Markdown ("Markdown", not MarkdownV2).
+
+    Legacy mode only parses *, _, ` and [..](..) — escaping anything else
+    (e.g. \\-, \\.) renders a stray backslash in the message.
+    """
     if text is None:
         return ""
-    return re.sub(r"([_*\[\]()~`>#+\-=|{}\\])", r"\\\1", str(text))
+    return re.sub(r"([*_`\[\]])", r"\\\1", str(text))
 
 
 class _ProgressFileWrapper:
