@@ -264,6 +264,24 @@ def set_cooldown(user_id):
     db.set(f"{COOLDOWN_KEY}_{user_id}", time.time(), ex=DOWNLOAD_COOLDOWN_SECONDS + 5)
 
 
+def _note_flood(e):
+    """Record a FloodWait so all progress edits back off account-wide."""
+    try:
+        if type(e).__name__ == "FloodWaitError":
+            from utils.flood import note_flood
+            note_flood(getattr(e, "seconds", 60))
+    except Exception:
+        pass
+
+
+def _edits_paused():
+    try:
+        from utils.flood import edits_blocked
+        return edits_blocked()
+    except Exception:
+        return False
+
+
 def _record_dl(uid, size, link, ok=True):
     """Stats hook: analytics pack when loaded, minimal fallback otherwise."""
     try:
@@ -2122,7 +2140,12 @@ async def _fail_single_dl(db, shorturl, hm, text, uid, job_id):
     except Exception:
         pass
     _record_dl(uid, 0, shorturl, False)
-    return await hm.edit(text, parse_mode="markdown")
+    try:
+        from utils.flood import patient_edit as _pe
+        await _pe(hm, text, parse_mode="markdown")
+    except Exception:
+        pass
+    return None
 
 
 async def handle_message(m: Message):
@@ -2320,9 +2343,11 @@ async def handle_message(m: Message):
             eta = f"ETA: {convert_seconds(remaining)}"
             sz = f"Size: {get_formatted_size(current_downloaded)} / {get_formatted_size(total_downloaded)}"
             try:
+                if _edits_paused():
+                    return
                 await hm.edit(f"{head}\n{bar}\n{spd} | {eta}\n{sz}", parse_mode="markdown")
-            except Exception:
-                pass
+            except Exception as e:
+                _note_flood(e)
 
         thumbnail = download_image_to_bytesio(data["thumb"], "thumbnail.png")
 
@@ -2500,9 +2525,12 @@ async def handle_message(m: Message):
             if m.is_group:
                 fwd_kwargs["top_msg_id"] = m.id
             try:
-                await bot(ForwardMessagesRequest(**fwd_kwargs))
-            except Exception as e:
-                log.info(f"Forward failed: {e}")
+                from utils.flood import patient_forward as _pf
+                _fok = await _pf(bot, **fwd_kwargs)
+            except Exception:
+                _fok = False
+            if not _fok:
+                log.info("Forward failed (incl. flood-wait retry)")
                 try:
                     os.unlink(download)
                 except Exception:
@@ -2530,12 +2558,20 @@ async def handle_message(m: Message):
                 pass
 
             _record_dl(m.sender_id, int(data.get("sizebytes", 0) or 0), shorturl, True)
+            try:
+                from utils.flood import patient_forward as _pfw
+            except Exception:
+                _pfw = None
             for _wchat in pop_waiters(db, shorturl):
                 try:
-                    await bot(ForwardMessagesRequest(
-                        from_peer=PRIVATE_CHAT_ID, id=[sent_id], to_peer=_wchat,
-                        drop_author=True, background=True,
-                    ))
+                    if _pfw is not None:
+                        await _pfw(bot, from_peer=PRIVATE_CHAT_ID, id=[sent_id],
+                                   to_peer=_wchat, drop_author=True, background=True)
+                    else:
+                        await bot(ForwardMessagesRequest(
+                            from_peer=PRIVATE_CHAT_ID, id=[sent_id], to_peer=_wchat,
+                            drop_author=True, background=True,
+                        ))
                 except Exception:
                     pass
             release_inflight(db, shorturl)
@@ -2562,7 +2598,7 @@ async def handle_message(m: Message):
 
         async def update_multi_progress(status_msg=""):
             nonlocal done_count, sent_count, failed_count
-            if not cansend.can_send():
+            if not cansend.can_send() or _edits_paused():
                 return
             bar_length = 20
             filled = int((done_count / total) * bar_length)
@@ -2578,8 +2614,8 @@ async def handle_message(m: Message):
             async with edit_lock:
                 try:
                     await hm.edit(text)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _note_flood(e)
 
         async def process_one(idx, data):
             nonlocal done_count, sent_count, failed_count
@@ -2603,7 +2639,7 @@ async def handle_message(m: Message):
                 _mjob["files"].append(_mdest)
 
                 async def progress_bar(current, total_bytes, state="Downloading"):
-                    if not cansend.can_send() or total_bytes == 0:
+                    if not cansend.can_send() or total_bytes == 0 or _edits_paused():
                         return
                     elapsed = time.time() - start_time
                     if elapsed < 1:
@@ -2730,9 +2766,12 @@ async def handle_message(m: Message):
                     if m.is_group:
                         fwd_kwargs["top_msg_id"] = m.id
                     try:
-                        await bot(ForwardMessagesRequest(**fwd_kwargs))
-                    except Exception as e:
-                        log.info(f"Forward failed: {e}")
+                        from utils.flood import patient_forward as _pfm
+                        _mfok = await _pfm(bot, **fwd_kwargs)
+                    except Exception:
+                        _mfok = False
+                    if not _mfok:
+                        log.info("Forward failed (incl. flood-wait retry)")
                         failed_count += 1
                         sent_count -= 1
                         unregister_job(db, m.sender_id, _mjob["id"])
@@ -3602,7 +3641,7 @@ async def folder_download(m: UpdateNewMessage):
 
     async def update_progress(status_msg=""):
         nonlocal done_count, sent_count, failed_count
-        if not cansend.can_send():
+        if not cansend.can_send() or _edits_paused():
             return
         bar_length = 20
         filled = int((done_count / total) * bar_length)
@@ -3618,8 +3657,8 @@ async def folder_download(m: UpdateNewMessage):
         async with edit_lock:
             try:
                 await hm.edit(text)
-            except Exception:
-                pass
+            except Exception as e:
+                _note_flood(e)
 
     async def process_file(idx, data):
         nonlocal done_count, sent_count, failed_count
@@ -3639,7 +3678,7 @@ async def folder_download(m: UpdateNewMessage):
             _fjob["files"].append(_fdest)
 
             async def progress_bar(current, total_bytes, state="Downloading"):
-                if not cansend.can_send() or total_bytes == 0:
+                if not cansend.can_send() or total_bytes == 0 or _edits_paused():
                     return
                 elapsed = time.time() - start_time
                 if elapsed < 1:
@@ -3759,12 +3798,15 @@ async def folder_download(m: UpdateNewMessage):
                 except Exception:
                     pass
                 try:
-                    await bot(ForwardMessagesRequest(
+                    from utils.flood import patient_forward as _pff
+                    _ffok = await _pff(bot,
                         from_peer=PRIVATE_CHAT_ID, id=[sent_id],
                         to_peer=m.chat.id, drop_author=True, background=True,
-                    ))
-                except Exception as e:
-                    log.info(f"Forward failed: {e}")
+                    )
+                except Exception:
+                    _ffok = False
+                if not _ffok:
+                    log.info("Forward failed (incl. flood-wait retry)")
                     failed_count += 1
                     sent_count -= 1
                     unregister_job(db, m.sender_id, _fjob["id"])
@@ -3796,10 +3838,13 @@ async def folder_download(m: UpdateNewMessage):
     except Exception as e:
         log.info(f"Folder batch failed: {e}")
 
-    await hm.edit(
-        f"✅ Folder complete!\n"
-        f"Sent: {sent_count}/{total} | Failed: {failed_count}"
-    )
+    try:
+        from utils.flood import patient_edit as _pef
+        await _pef(hm,
+            f"✅ Folder complete!\n"
+            f"Sent: {sent_count}/{total} | Failed: {failed_count}")
+    except Exception:
+        pass
 
 
 # ==================== BAN SYSTEM ====================

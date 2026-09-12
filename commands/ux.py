@@ -252,12 +252,37 @@ def register(bot, ctx):
                     else:
                         await bot.send_message(uid, text)
                     sent += 1
-                except Exception:
+                except Exception as e:
+                    if type(e).__name__ == "FloodWaitError":
+                        try:
+                            secs = int(getattr(e, "seconds", 60) or 60)
+                        except Exception:
+                            secs = 60
+                        try:
+                            await status.edit(f"⏳ Flood-wait {secs}s — resuming automatically... ({sent}/{len(ids)} done)")
+                        except Exception:
+                            pass
+                        try:
+                            await asyncio.sleep(secs + 5)
+                        except Exception:
+                            pass
+                        try:
+                            if fwd_src:
+                                await bot.forward_messages(uid, fwd_src)
+                            else:
+                                await bot.send_message(uid, text)
+                            sent += 1
+                            continue
+                        except Exception:
+                            pass
                     failed += 1
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(2.0)
         try:
             db.incr("stats:broadcasts")
         except Exception:
             pass
         note = "" if not failed else "\nFailed = blocked/deleted accounts."
-        await status.edit(f"**Broadcast Complete**\nTotal: **{len(ids)}**\nSent: **{sent}**\nFailed: **{failed}**{note}", parse_mode="markdown")
+        try:
+            await status.edit(f"**Broadcast Complete**\nTotal: **{len(ids)}**\nSent: **{sent}**\nFailed: **{failed}**{note}", parse_mode="markdown")
+        except Exception:
+            pass
