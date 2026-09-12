@@ -264,6 +264,12 @@ def set_cooldown(user_id):
     db.set(f"{COOLDOWN_KEY}_{user_id}", time.time(), ex=DOWNLOAD_COOLDOWN_SECONDS + 5)
 
 
+try:
+    _NO_BUTTONS = telethon.tl.types.ReplyInlineMarkup(rows=[])
+except Exception:
+    _NO_BUTTONS = None
+
+
 def _note_flood(e):
     """Record a FloodWait so all progress edits back off account-wide."""
     try:
@@ -2149,7 +2155,8 @@ async def _fail_single_dl(db, shorturl, hm, text, uid, job_id):
     _record_dl(uid, 0, shorturl, False)
     try:
         from utils.flood import patient_edit as _pe
-        await _pe(hm, text, parse_mode="markdown")
+        await _pe(hm, text, parse_mode="markdown",
+                  **({"buttons": _NO_BUTTONS} if _NO_BUTTONS is not None else {}))
     except Exception:
         pass
     return None
@@ -2554,7 +2561,8 @@ async def handle_message(m: Message):
                 pass
 
             try:
-                await hm.edit("✅ Video sent successfully to your chat!")
+                await hm.edit("✅ Video sent successfully to your chat!",
+                              **({"buttons": _NO_BUTTONS} if _NO_BUTTONS is not None else {}))
             except Exception:
                 pass
 
@@ -2834,10 +2842,11 @@ async def handle_message(m: Message):
         try:
             await hm.edit(
                 f"✅ Complete!\n"
-                f"Sent: {sent_count}/{total} | Failed: {failed_count}"
+                f"Sent: {sent_count}/{total} | Failed: {failed_count}",
+                **({"buttons": _NO_BUTTONS} if _NO_BUTTONS is not None else {}),
             )
-        except Exception:
-            pass
+        except Exception as e:
+            _note_flood(e)
 
 
 
@@ -3851,7 +3860,8 @@ async def folder_download(m: UpdateNewMessage):
         from utils.flood import patient_edit as _pef
         await _pef(hm,
             f"✅ Folder complete!\n"
-            f"Sent: {sent_count}/{total} | Failed: {failed_count}")
+            f"Sent: {sent_count}/{total} | Failed: {failed_count}",
+            **({"buttons": _NO_BUTTONS} if _NO_BUTTONS is not None else {}))
     except Exception:
         pass
 

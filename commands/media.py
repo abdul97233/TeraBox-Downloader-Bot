@@ -9,9 +9,26 @@ import os as _os
 
 from telethon import Button, events
 
+try:
+    from telethon.tl import types as _t
+    _CLEAR = _t.ReplyInlineMarkup(rows=[])
+except Exception:
+    _CLEAR = None
+
 MP3_RATES = ("128", "192", "256", "320")
 CMP_HEIGHTS = (480, 720, 1080)
 CMP_CRF = {480: 26, 720: 23, 1080: 20}
+
+
+async def _final_edit(msg, text):
+    """Terminal status edit that also removes the Cancel button."""
+    try:
+        if _CLEAR is not None:
+            await _final_edit(msg, text, buttons=_CLEAR)
+        else:
+            await _final_edit(msg, text)
+    except Exception:
+        pass
 
 
 def _parse_target(data):
@@ -131,7 +148,7 @@ def register(bot, ctx):
                 has_audio = await loop.run_in_executor(None, _has_audio_sync, video_path)
                 if has_audio is False:
                     try:
-                        await msg.edit("❌ This file does not contain an audio track.")
+                        await _final_edit(msg, "❌ This file does not contain an audio track.")
                     except Exception:
                         pass
                     return
@@ -142,7 +159,7 @@ def register(bot, ctx):
                 rc, _out, err = await loop.run_in_executor(None, ffmpeg_run, cmd, 600, job)
                 if rc != 0 or not _os.path.isfile(audio_path):
                     try:
-                        await msg.edit("❌ Audio extraction failed.")
+                        await _final_edit(msg, "❌ Audio extraction failed.")
                     except Exception:
                         pass
                     try:
@@ -171,12 +188,12 @@ def register(bot, ctx):
                     pass
         except asyncio.CancelledError:
             try:
-                await msg.edit("❌ Download cancelled successfully.")
+                await _final_edit(msg, "❌ Download cancelled successfully.")
             except Exception:
                 pass
         except Exception:
             try:
-                await msg.edit("❌ Media processing failed.")
+                await _final_edit(msg, "❌ Media processing failed.")
             except Exception:
                 pass
         finally:
@@ -277,7 +294,7 @@ def register(bot, ctx):
                 _w, src_h = await loop.run_in_executor(None, _probe_wh_sync, video_path)
                 if src_h and h > src_h:
                     try:
-                        await msg.edit(f"Source is {src_h}p — {h}p would upscale. Picked nothing; try a lower option.")
+                        await _final_edit(msg, f"Source is {src_h}p — {h}p would upscale. Picked nothing; try a lower option.")
                     except Exception:
                         pass
                     return
@@ -290,7 +307,7 @@ def register(bot, ctx):
                 rc, _out, err = await loop.run_in_executor(None, ffmpeg_run, cmd, 900, job)
                 if rc != 0 or not _os.path.isfile(out_path):
                     try:
-                        await msg.edit("❌ Video processing failed.")
+                        await _final_edit(msg, "❌ Video processing failed.")
                     except Exception:
                         pass
                     try:
@@ -320,12 +337,12 @@ def register(bot, ctx):
                     pass
         except asyncio.CancelledError:
             try:
-                await msg.edit("❌ Download cancelled successfully.")
+                await _final_edit(msg, "❌ Download cancelled successfully.")
             except Exception:
                 pass
         except Exception:
             try:
-                await msg.edit("❌ Media processing failed.")
+                await _final_edit(msg, "❌ Media processing failed.")
             except Exception:
                 pass
         finally:
