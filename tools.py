@@ -92,8 +92,16 @@ def _ensure_font():
 _ensure_font()
 
 
-def add_watermark(input_path: str) -> str | bool:
-    """Add watermark to video using ffmpeg. Returns watermarked file path or False."""
+def caption_name(name: str) -> str:
+    """Make an API filename safe inside Markdown backticks."""
+    return str(name or "file").replace("`", "'")
+
+
+def add_watermark(input_path: str, job=None) -> str | bool:
+    """Add watermark to video using ffmpeg. Returns watermarked file path or False.
+
+    job (optional): utils.jobs job dict — enables /cancel to kill ffmpeg.
+    """
     if not FFMPEG_PATH:
         log.info("ffmpeg not found, skipping watermark")
         return False
@@ -132,20 +140,28 @@ def add_watermark(input_path: str) -> str | bool:
             output_path,
         ]
         _t0 = time.time()
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300
-        )
-        if result.returncode == 0 and os.path.isfile(output_path):
+        if job is not None:
+            from utils.jobs import ffmpeg_run
+            rc, _out, err = ffmpeg_run(cmd, timeout=300, job=job)
+        else:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=300
+            )
+            rc, err = result.returncode, result.stderr
+        if rc == 0 and os.path.isfile(output_path):
             os.replace(output_path, input_path)
-            log.info(f"Watermark done in {time.time() - _t0:.0f}s: {input_path}")
+            log.info(f"Watermark done in {time.time() - _t0:.0f}s")
             return input_path
         else:
-            log.info(f"ffmpeg watermark error: {result.stderr[:500]}")
+            log.info(f"ffmpeg watermark error: {(err or '')[:200]}")
             if os.path.exists(output_path):
                 os.unlink(output_path)
             return False
+    except (asyncio.CancelledError, TimeoutError):
+        raise
     except Exception as e:
-        log.info(f"Watermark failed: {e}")
+        from utils.logx import safe_exc
+        log.info(f"Watermark failed: {safe_exc(e)}")
         if os.path.exists(output_path):
             os.unlink(output_path)
         return False
@@ -154,6 +170,7 @@ def add_watermark(input_path: str) -> str | bool:
 def get_video_info(file_path: str) -> dict:
     """Extract duration, width, height and thumbnail from a video file using OpenCV."""
     info = {"duration": 0, "width": 0, "height": 0, "thumbnail": None}
+    cap = None
     try:
         if not os.path.isfile(file_path) or os.path.getsize(file_path) < 1024:
             return info
@@ -162,20 +179,39 @@ def get_video_info(file_path: str) -> dict:
             return info
         fps = cap.get(cv2.CAP_PROP_FPS)
         frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        duration = int(frames / fps) if fps > 0 else 0
-        # Generate thumbnail at 10% of video
-        cap.set(cv2.CAP_PROP_POS_FRAMES, int(frames * 0.1))
-        ret, frame = cap.read()
-        thumb_path = None
-        if ret:
-            thumb_path = os.path.join(os.path.dirname(file_path), "thumb.jpg")
-            cv2.imwrite(thumb_path, frame)
-        cap.release()
-        info = {"duration": duration, "width": w, "height": h, "thumbnail": thumb_path}
+        try:
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        except Exception:
+            w, h = 0, 0
+        try:
+            duration = int(frames / fps) if fps and fps > 0 and frames == frames else 0
+        except Exception:
+            duration = 0
+        # Generate thumbnail at 10% of video (unique name: no cross-task clobber)
+        try:
+            total_frames = int(frames) if frames and frames == frames and frames > 0 else 0
+        except Exception:
+            total_frames = 0
+        if total_frames > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(total_frames * 0.1))
+            ret, frame = cap.read()
+            if ret and frame is not None:
+                base = os.path.basename(file_path)
+                safe = "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in base)[:80]
+                thumb_path = os.path.join(os.path.dirname(file_path), f"{safe}.thumb.jpg")
+                if cv2.imwrite(thumb_path, frame):
+                    info["thumbnail"] = thumb_path
+        info.update({"duration": duration, "width": w, "height": h})
     except Exception as e:
-        log.info(f"get_video_info error: {e}")
+        from utils.logx import safe_exc
+        log.info(f"get_video_info error: {safe_exc(e)}")
+    finally:
+        try:
+            if cap is not None:
+                cap.release()
+        except Exception:
+            pass
     return info
 
 
@@ -257,24 +293,40 @@ def _bot_api_send(base_url, token, chat_id, file_path, caption, filename, progre
     url = f"{base_url.rstrip('/')}/bot{token}/{endpoint}"
     total = os.path.getsize(file_path)
 
-    files_dict = {}
-    with open(file_path, "rb") as raw:
-        wrapped = _ProgressFileWrapper(raw, progress_callback, total, loop)
-        files_dict[file_field] = (filename, wrapped)
-        if thumb and is_video and os.path.isfile(thumb):
-            files_dict["thumb"] = ("thumb.jpg", open(thumb, "rb"), "image/jpeg")
+    last_err = "unknown"
+    for attempt in (1, 2):
+        files_dict = {}
         try:
-            resp = requests.post(url, files=files_dict, data=data, timeout=1800)
+            with open(file_path, "rb") as raw:
+                wrapped = _ProgressFileWrapper(raw, progress_callback, total, loop)
+                files_dict[file_field] = (filename, wrapped)
+                if thumb and is_video and os.path.isfile(thumb):
+                    files_dict["thumb"] = ("thumb.jpg", open(thumb, "rb"), "image/jpeg")
+                try:
+                    resp = requests.post(url, files=files_dict, data=data, timeout=1800)
+                finally:
+                    if "thumb" in files_dict:
+                        try:
+                            files_dict["thumb"][1].close()
+                        except Exception:
+                            pass
         except Exception as e:
-            return {"ok": False, "description": str(e)}
-        finally:
-            if "thumb" in files_dict:
-                files_dict["thumb"][1].close()
-
-    try:
-        return resp.json()
-    except Exception:
-        return {"ok": False, "description": resp.text[:500]}
+            from utils.logx import safe_exc
+            last_err = safe_exc(e)
+            log.info(f"Upload attempt {attempt}/2 failed: {last_err}")
+            continue
+        try:
+            result = resp.json()
+        except Exception:
+            try:
+                result = {"ok": False, "description": resp.text[:200]}
+            except Exception:
+                result = {"ok": False, "description": "unreadable response"}
+        if result.get("ok"):
+            return result
+        last_err = str(result.get("description", "not ok"))[:200]
+        log.info(f"Upload attempt {attempt}/2 not ok: {last_err}")
+    return {"ok": False, "description": last_err}
 
 
 async def send_document_via_api(base_url, token, chat_id, file_path, caption, filename, progress_callback=None,
@@ -500,7 +552,8 @@ async def download_file(
                 async with session:
                     async with session.get(url, timeout=timeout) as response:
                         if response.status != 200:
-                            log.info(f"HTTP {response.status} on attempt {attempt}/{retries}: {url}")
+                            from utils.logx import redact_url
+                            log.info(f"HTTP {response.status} on attempt {attempt}/{retries}: {redact_url(url)}")
                             if attempt < retries:
                                 await asyncio.sleep(3 * attempt)
                                 continue
@@ -516,17 +569,18 @@ async def download_file(
                                 downloaded += len(chunk)
                                 if callback:
                                     await callback(downloaded, total, "Downloading")
-            except aiohttp.ClientError:
+            except aiohttp.ClientError as e:
                 if attempt < retries:
-                    log.info(f"Connection error on attempt {attempt}/{retries}: {url}")
+                    from utils.logx import safe_exc
+                    log.info(f"Connection error on attempt {attempt}/{retries}: {safe_exc(e)}")
                     await asyncio.sleep(3 * attempt)
                     continue
                 raise
 
-            # Verify download is complete
+            # Verify download is complete (sparse pre-allocation means == matters)
             if total > 0 and os.path.isfile(filename):
                 actual = os.path.getsize(filename)
-                if actual < total:
+                if actual != total:
                     log.info(f"Incomplete download: {actual}/{total} bytes")
                     if attempt < retries:
                         await asyncio.sleep(2)
@@ -536,13 +590,14 @@ async def download_file(
             return filename
 
         except asyncio.TimeoutError:
-            log.info(f"Download timeout on attempt {attempt}/{retries}: {url}")
+            log.info(f"Download timeout on attempt {attempt}/{retries}")
             if attempt < retries:
                 await asyncio.sleep(2)
                 continue
             return False
         except Exception as e:
-            log.info(f"Error downloading file on attempt {attempt}/{retries}: {e}")
+            from utils.logx import safe_exc
+            log.info(f"Error downloading file on attempt {attempt}/{retries}: {safe_exc(e)}")
             if attempt < retries:
                 await asyncio.sleep(2)
                 continue
@@ -563,7 +618,7 @@ def download_image_to_bytesio(url: str, filename: str) -> BytesIO | None:
         BytesIO: The image data as a BytesIO object, or None if the download failed.
     """
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=15)
         if response.status_code == 200:
             image_bytes = BytesIO(response.content)
             image_bytes.name = filename
@@ -571,4 +626,15 @@ def download_image_to_bytesio(url: str, filename: str) -> BytesIO | None:
         else:
             return None
     except:
+        return None
+
+
+def bytesio_from_file(path: str, filename: str) -> BytesIO | None:
+    """Wrap a LOCAL file as BytesIO (for OpenCV thumbnails)."""
+    try:
+        with open(path, "rb") as f:
+            bio = BytesIO(f.read())
+        bio.name = filename
+        return bio
+    except Exception:
         return None

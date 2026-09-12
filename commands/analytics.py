@@ -22,20 +22,37 @@ DEFAULT_LOG = os.path.normpath(
 LINK_COUNTS_KEY = "link_counts"  # ZSET: link-id -> downloads
 
 
-def track_download(db, user_id, size_bytes, link=None):
-    """Record one download: per-user hash + global STATS_KEY + popular links."""
+def track_download(db, user_id, size_bytes, link=None, ok=True):
+    """Record one download attempt: attempts always; success adds total/storage.
+
+    Keeps legacy `total` (= successes) so existing readers keep working.
+    """
     try:
         ukey = f"{USER_STATS_PREFIX}{int(user_id)}"
         size = int(size_bytes or 0)
         now = time.strftime("%Y-%m-%d %H:%M:%S")
-        db.hincrby(ukey, "total", 1)
-        if size > 0:
-            db.hincrby(ukey, "storage", size)
-        db.hset(ukey, "last_activity", now)
-        db.hincrby(STATS_KEY, "total_downloads", 1)
-        if link:
+        try:
+            db.hincrby(ukey, "attempts", 1)
+        except Exception:
+            pass
+        if ok:
+            db.hincrby(ukey, "total", 1)
             try:
-                db.zincrby(LINK_COUNTS_KEY, 1, str(link)[:120])
+                db.hincrby(ukey, "success", 1)
+            except Exception:
+                pass
+            if size > 0:
+                db.hincrby(ukey, "storage", size)
+            db.hset(ukey, "last_activity", now)
+            db.hincrby(STATS_KEY, "total_downloads", 1)
+            if link:
+                try:
+                    db.zincrby(LINK_COUNTS_KEY, 1, str(link)[:120])
+                except Exception:
+                    pass
+        else:
+            try:
+                db.hincrby(ukey, "failed", 1)
             except Exception:
                 pass
         return True

@@ -17,10 +17,16 @@ from telethon.tl.functions.messages import ForwardMessagesRequest
 from telethon.types import Message, UpdateNewMessage
 
 from cansend import CanSend
+from utils.jobs import (
+    register_job, unregister_job, sweep_finished,
+    claim_inflight, release_inflight, add_waiter, pop_waiters,
+)
 from config import *
 from terabox import get_files, get_fallback_files
 from tools import (
     add_watermark,
+    bytesio_from_file,
+    caption_name,
     convert_seconds,
     download_file,
     download_image_to_bytesio,
@@ -248,6 +254,18 @@ def check_cooldown(user_id):
 def set_cooldown(user_id):
     """Set download cooldown for user."""
     db.set(f"{COOLDOWN_KEY}_{user_id}", time.time(), ex=DOWNLOAD_COOLDOWN_SECONDS + 5)
+
+
+def _record_dl(uid, size, link, ok=True):
+    """Stats hook: analytics pack when loaded, minimal fallback otherwise."""
+    try:
+        fn = globals().get("_track_dl")
+        if callable(fn):
+            fn(db, uid, size, link, ok)
+        elif ok:
+            db.hincrby(f"user_stats_{uid}", "total", 1)
+    except Exception:
+        pass
 
 # Define /info and /id commands to display user information
 @bot.on(
@@ -1804,7 +1822,22 @@ async def demote_all_premium(m: UpdateNewMessage):
     )
 )
 async def get_message(m: Message):
-    asyncio.create_task(handle_message(m))
+    _t = asyncio.create_task(handle_message(m))
+
+    def _swallow(t):
+        try:
+            exc = t.exception()
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            return
+        if exc is not None and not isinstance(exc, asyncio.CancelledError):
+            try:
+                log.info(f"handle_message failed: {exc}")
+            except Exception:
+                pass
+
+    _t.add_done_callback(_swallow)
 
 
 DL_QUALITY_MAP = {
@@ -1843,7 +1876,8 @@ async def handle_message(m: Message):
 
     url = get_urls_from_string(m.text)
     if not url:
-        return await m.reply("Please enter a valid url.")
+        from utils.errors import send_user_error as _sue
+        return await _sue(m, "unsupported_link")
 
     # Maintenance mode check
     if is_maintenance():
@@ -1864,8 +1898,15 @@ async def handle_message(m: Message):
 
     # Track active user today
     today_key = f"active_{time.strftime('%Y-%m-%d')}"
-    db.incr(today_key)
-    db.expire(today_key, 86400)
+    try:
+        if db.incr(today_key) == 1:
+            db.expire(today_key, 86400)
+    except Exception:
+        pass
+    try:
+        db.set(f"member_since:{m.sender_id}", time.strftime("%Y-%m-%d"), nx=True)
+    except Exception:
+        pass
 
     # Track total users
     user_set_key = "all_known_users"
@@ -1902,11 +1943,13 @@ async def handle_message(m: Message):
 
     shorturl = extract_code_from_url(url)
     if not shorturl:
-        return await hm.edit("Seems like your link is invalid.")
+        from utils.errors import send_user_error as _sue
+        return await _sue(hm, "invalid_link", via="edit")
 
     files = await get_files(url)
     if not files:
-        return await hm.edit("Sorry! API is dead or maybe your link is broken.")
+        from utils.errors import send_user_error as _sue
+        return await _sue(hm, "api_unavailable", via="edit")
 
     # Max files per request check
     if len(files) > MAX_FILES_PER_REQUEST and not is_premium:
@@ -1933,43 +1976,30 @@ async def handle_message(m: Message):
             valid_msgs = [msg for msg in cached_msgs if msg and msg.media]
             if valid_msgs:
                 data = files_to_process[0]
-                user_tag = get_custom_tag(m.sender_id)
-                tag_str = f" ({user_tag})" if user_tag else ""
-                cached_caption = f"""
-┏━━━━━━━━━━⍟
-┃ 𝐍𝐓𝐌 𝐓𝐞𝐫𝐚 𝐁𝐨𝐱 𝐃𝐨𝐰𝐧𝐥𝐨𝐚𝐝𝐞𝐫 𝐁𝐨𝐭
-┗━━━━━━━━━━━━━━━━━⍟
-╔══════════⍟
-╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{data['file_name']}`
-╟➣𝙎𝙞𝙯𝙚: **{data['size']}**
-╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(m.sender.first_name)}{tag_str}
-╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(m.sender.username or '-')}
-╚═════════════════⍟
-         @NTMpro
-"""
-                if len(valid_msgs) == 1:
-                    await bot.send_file(
-                        m.chat.id,
-                        file=valid_msgs[0].media,
-                        caption=cached_caption,
-                        supports_streaming=True,
-                    )
-                else:
-                    for cm in valid_msgs:
-                        await bot.send_file(
-                            m.chat.id,
-                            file=cm.media,
-                            supports_streaming=True,
-                        )
-                await hm.delete()
-                db.set(
-                    f"check_{m.sender_id}",
-                    int(count) + 1 if count else 1,
-                    ex=3600,
+                import json as _json2
+                try:
+                    db.set(f"cache:pending:{m.sender_id}:{shorturl}", _json2.dumps({
+                        "ids": [mm.id for mm in valid_msgs],
+                        "url": url,
+                        "file_name": data.get("file_name", "file"),
+                        "size": data.get("size", "?"),
+                    }), ex=600)
+                except Exception:
+                    pass
+                await hm.edit(
+                    "⚡ This file was already downloaded.\n\nWould you like to receive the cached copy?",
+                    buttons=[
+                        [Button.inline("✅ Send Cached File", data=f"cx_send:{shorturl}")],
+                        [Button.inline("❌ Download Again", data=f"cx_again:{shorturl}")],
+                    ],
                 )
                 return
         except Exception as e:
             log.info(f"Cache forward failed: {e}")
+            try:
+                db.delete(shorturl)
+            except Exception:
+                pass
 
     user_first_name = m.sender.first_name
     user_username = m.sender.username
@@ -2010,7 +2040,7 @@ async def handle_message(m: Message):
             speed = current_downloaded / elapsed_time
             speed_mb = speed / (1024 * 1024)
             remaining = (total_downloaded - current_downloaded) / speed if speed > 0 else 0
-            head = f"{state} `{data['file_name']}`"
+            head = f"{state} `{caption_name(data['file_name'])}`"
             bar = f"[{arrow}{spaces}] {percent:.0%}"
             spd = f"Speed: {speed_mb:.1f} MB/s"
             eta = f"ETA: {convert_seconds(remaining)}"
@@ -2020,18 +2050,29 @@ async def handle_message(m: Message):
             except Exception:
                 pass
 
-        uuid = str(uuid4())
         thumbnail = download_image_to_bytesio(data["thumb"], "thumbnail.png")
 
+        _dest = os.path.join(DOWNLOAD_DIR, os.path.basename(data["file_name"]))
+        _job = register_job(db, m.sender_id, f"dl:{data['file_name']}", msg=hm)
+        _job["files"].append(_dest)
+        _inflight_mine = claim_inflight(db, shorturl)
+        if not _inflight_mine:
+            add_waiter(db, shorturl, m.chat.id)
+            unregister_job(db, m.sender_id, _job["id"])
+            return await hm.edit("⏳ Same file is being downloaded right now — you'll receive it automatically.")
+
         download = await download_file(
-            data["direct_link"], os.path.join(DOWNLOAD_DIR, data["file_name"]), progress_bar
+            data["direct_link"], _dest, progress_bar
         )
         if not download:
             download = await _retry_download_via_fallback(
-                url, data, os.path.join(DOWNLOAD_DIR, data["file_name"]), progress_bar
+                url, data, _dest, progress_bar
             )
         total_time = time.time() - start_time
         if not download:
+            release_inflight(db, shorturl)
+            unregister_job(db, m.sender_id, _job["id"])
+            _record_dl(m.sender_id, 0, shorturl, False)
             return await hm.edit(
                 f"Sorry! Download Failed but you can download it from [here]({url}).",
                 parse_mode="markdown",
@@ -2055,7 +2096,7 @@ async def handle_message(m: Message):
             try:
                 await hm.edit(f"✅ Downloaded `{data['file_name']}` — adding watermark...")
                 await asyncio.wait_for(
-                    asyncio.get_event_loop().run_in_executor(None, add_watermark, download),
+                    asyncio.get_event_loop().run_in_executor(None, add_watermark, download, _job),
                     timeout=120,
                 )
             except (asyncio.TimeoutError, Exception):
@@ -2074,9 +2115,15 @@ async def handle_message(m: Message):
                     "-preset", "fast", "-c:a", "aac", "-b:a", "128k",
                     compressed_path,
                 ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-                if result.returncode == 0 and os.path.isfile(compressed_path):
+                from utils.jobs import ffmpeg_run as _ffmpeg_run
+                rc, _out, _err = await asyncio.get_event_loop().run_in_executor(
+                    None, _ffmpeg_run, cmd, 180, _job)
+                if rc == 0 and os.path.isfile(compressed_path):
                     os.replace(compressed_path, download)
+                else:
+                    log.info(f"Compression failed rc={rc}: {(_err or '')[:200]}")
+                    if os.path.isfile(compressed_path):
+                        os.unlink(compressed_path)
             except Exception as e:
                 log.info(f"Compression failed: {e}")
                 if os.path.isfile(compressed_path):
@@ -2101,16 +2148,17 @@ async def handle_message(m: Message):
         vheight = vinfo.get("height", 0)
         vthumb = vinfo.get("thumbnail")
         if vthumb and not thumbnail:
-            thumbnail = download_image_to_bytesio(vthumb, "thumb.jpg")
+            from tools import bytesio_from_file as _bio_file
+            thumbnail = _bio_file(vthumb, "thumb.jpg")
 
         caption = f"""
 ┏━━━━━━━━━━⍟
 ┃ 𝐍𝐓𝐌 𝐓𝐞𝐫𝐚 𝐁𝐨𝐱 𝐃𝐨𝐰𝐧𝐥𝐨𝐚𝐝𝐞𝐫 𝐁𝐨𝐭
 ┗━━━━━━━━━━━━━━━━━⍟
 ╔══════════⍟
-╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{data['file_name']}`
+╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{caption_name(data['file_name'])}`
 ╟➣𝙎𝙞𝙯𝙚: **{escape_markdown(data['size'])}** 
-╟➣𝗗𝗶𝗿𝗲𝗰𝘁 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱 𝗟𝗶𝗻𝗸 : [Click here]({data['direct_link']})
+╟➣𝗗𝗶𝗿𝗲𝗰𝘁 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱 𝗟𝗶𝗻𝗸 : [Click here]({data['direct_link'].replace(')', '%29')})
 ╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}{tag_str}
 ╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(user_username or '-')}
 ╟➣𝐓𝐨𝐭𝐚𝐥 𝐓𝐢𝐦𝐞 𝐓𝐚𝐤𝐞𝐧: {total_time_str}
@@ -2128,7 +2176,11 @@ async def handle_message(m: Message):
                 sent_id = api_res["result"]["message_id"]
                 log.info(f"Uploaded via custom Bot API, message_id: {sent_id}")
             else:
-                log.info(f"Custom Bot API error: {api_res}")
+                try:
+                    desc = str((api_res or {}).get("description", "not ok"))[:160]
+                except Exception:
+                    desc = "not ok"
+                log.info(f"Custom Bot API not ok: {desc}")
         except Exception as e:
             log.info(f"Custom Bot API upload failed: {e}")
 
@@ -2146,6 +2198,9 @@ async def handle_message(m: Message):
                     os.unlink(download)
                 except Exception:
                     pass
+                release_inflight(db, shorturl)
+                unregister_job(db, m.sender_id, _job["id"])
+                _record_dl(m.sender_id, 0, shorturl, False)
                 return await hm.edit(
                     f"Sorry! Upload Failed but you can download it from [here]({url}).",
                     parse_mode="markdown",
@@ -2158,7 +2213,6 @@ async def handle_message(m: Message):
                     db.set(shorturl, f"{existing},{sent_id}")
                 else:
                     db.set(shorturl, sent_id)
-            db.set(uuid, sent_id)
 
             fwd_kwargs = dict(
                 from_peer=PRIVATE_CHAT_ID, id=[sent_id], to_peer=m.chat.id,
@@ -2170,6 +2224,14 @@ async def handle_message(m: Message):
                 await bot(ForwardMessagesRequest(**fwd_kwargs))
             except Exception as e:
                 log.info(f"Forward failed: {e}")
+                release_inflight(db, shorturl)
+                unregister_job(db, m.sender_id, _job["id"])
+                _record_dl(m.sender_id, 0, shorturl, False)
+                try:
+                    os.unlink(download)
+                except Exception:
+                    pass
+                return await hm.edit("Upload succeeded but delivery failed — please try again.")
 
             try:
                 os.unlink(download)
@@ -2181,14 +2243,23 @@ async def handle_message(m: Message):
             except Exception:
                 pass
 
-            db.hincrby(STATS_KEY, "total_downloads", 1)
             try:
-                if "_track_dl" in globals() and callable(globals()["_track_dl"]):
-                    globals()["_track_dl"](db, m.sender_id, int(data.get("sizebytes", 0) or 0), shorturl)
-                else:
-                    db.hincrby(f"user_stats_{m.sender_id}", "total", 1)
+                if vthumb and os.path.isfile(vthumb):
+                    os.unlink(vthumb)
             except Exception:
                 pass
+
+            _record_dl(m.sender_id, int(data.get("sizebytes", 0) or 0), shorturl, True)
+            for _wchat in pop_waiters(db, shorturl):
+                try:
+                    await bot(ForwardMessagesRequest(
+                        from_peer=PRIVATE_CHAT_ID, id=[sent_id], to_peer=_wchat,
+                        drop_author=True, background=True,
+                    ))
+                except Exception:
+                    pass
+            release_inflight(db, shorturl)
+            unregister_job(db, m.sender_id, _job["id"])
             import json as _json
             history_entry = _json.dumps({
                 "file": data["file_name"], "size": data["size"],
@@ -2240,12 +2311,15 @@ async def handle_message(m: Message):
                     failed_count += 1
                     return
 
-                if int(data["sizebytes"]) > 524288000 and not is_admin(m.sender_id) and not is_premium:
+                if int(data.get("sizebytes", 0) or 0) > 524288000 and not is_admin(m.sender_id) and not is_premium:
                     done_count += 1
                     failed_count += 1
                     return
 
                 start_time = time.time()
+                _mdest = os.path.join(DOWNLOAD_DIR, f"{idx:02d}_{os.path.basename(data['file_name'])}")
+                _mjob = register_job(db, m.sender_id, f"dl:{data['file_name']}", msg=hm)
+                _mjob["files"].append(_mdest)
 
                 async def progress_bar(current, total_bytes, state="Downloading"):
                     if not cansend.can_send() or total_bytes == 0:
@@ -2260,24 +2334,26 @@ async def handle_message(m: Message):
                     filled = int(pct * bar_length)
                     bar = "█" * filled + "░" * (bar_length - filled)
                     await update_multi_progress(
-                        f"⬇️ `{data['file_name']}`\n"
+                        f"⬇️ `{caption_name(data['file_name'])}`\n"
                         f"[{bar}] {pct:.0%} | {speed:.1f} MB/s | ETA {convert_seconds(remaining)}"
                     )
 
                 download = await download_file(
                     data["direct_link"],
-                    os.path.join(DOWNLOAD_DIR, data["file_name"]),
+                    _mdest,
                     progress_bar,
                 )
                 if not download:
                     download = await _retry_download_via_fallback(
                         url, data,
-                        os.path.join(DOWNLOAD_DIR, data["file_name"]),
+                        _mdest,
                         progress_bar,
                     )
                 if not download:
                     done_count += 1
                     failed_count += 1
+                    unregister_job(db, m.sender_id, _mjob["id"])
+                    _record_dl(m.sender_id, 0, shorturl, False)
                     await update_multi_progress(f"❌ Download failed: `{data['file_name']}`")
                     return
 
@@ -2293,7 +2369,7 @@ async def handle_message(m: Message):
                 if 10240 < file_size < wm_limit and not skip_wm:
                     try:
                         await asyncio.wait_for(
-                            asyncio.get_event_loop().run_in_executor(None, add_watermark, download),
+                            asyncio.get_event_loop().run_in_executor(None, add_watermark, download, _mjob),
                             timeout=120,
                         )
                     except (asyncio.TimeoutError, Exception):
@@ -2307,7 +2383,7 @@ async def handle_message(m: Message):
 ┃ 𝐍𝐓𝐌 𝐓𝐞𝐫𝐚 𝐁𝐨𝐱 𝐃𝐨𝐰𝐧𝐥𝐨𝐚𝐝𝐞𝐫 𝐁𝐨𝐭
 ┗━━━━━━━━━━━━━━━━━⍟
 ╔══════════⍟
-╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{data['file_name']}`
+╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{caption_name(data['file_name'])}`
 ╟➣𝙎𝙞𝙯𝙚: **{escape_markdown(data['size'])}**
 ╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}{tag_str}
 ╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(user_username or '-')}
@@ -2323,13 +2399,14 @@ async def handle_message(m: Message):
                     )
                 except (asyncio.TimeoutError, Exception):
                     vinfo = {"duration": 0, "width": 0, "height": 0, "thumbnail": None}
+                _mthumb = vinfo.get("thumbnail")
                 sent_id = None
                 try:
                     api_res = await send_document_via_api(
                         TG_API_BASE, BOT_TOKEN, PRIVATE_CHAT_ID, download, caption,
-                        data["file_name"], None,
+                        data["file_name"], progress_bar,
                         duration=vinfo.get("duration", 0), width=vinfo.get("width", 0),
-                        height=vinfo.get("height", 0), thumb=vinfo.get("thumbnail"),
+                        height=vinfo.get("height", 0), thumb=_mthumb,
                     )
                     if api_res.get("ok"):
                         sent_id = api_res["result"]["message_id"]
@@ -2341,6 +2418,8 @@ async def handle_message(m: Message):
                         file = await bot.send_file(
                             PRIVATE_CHAT_ID, file=download, caption=caption,
                             video=True, supports_streaming=True, spoiler=True,
+                            thumb=_mthumb if _mthumb and os.path.isfile(_mthumb) else None,
+                            progress_callback=progress_bar,
                         )
                         sent_id = file.id
                     except Exception:
@@ -2364,33 +2443,43 @@ async def handle_message(m: Message):
                         fwd_kwargs["top_msg_id"] = m.id
                     try:
                         await bot(ForwardMessagesRequest(**fwd_kwargs))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.info(f"Forward failed: {e}")
+                        failed_count += 1
+                        sent_count -= 1
+                        unregister_job(db, m.sender_id, _mjob["id"])
+                        _record_dl(m.sender_id, 0, shorturl, False)
+                        await update_multi_progress(f"❌ Delivery failed: `{data['file_name']}`")
+                        return
 
                     try:
                         await m.reply(f"✅ `{data['file_name']}` sent!")
                     except Exception:
                         pass
 
-                    db.hincrby(STATS_KEY, "total_downloads", 1)
-                    try:
-                        if "_track_dl" in globals() and callable(globals()["_track_dl"]):
-                            globals()["_track_dl"](db, m.sender_id, int(data.get("sizebytes", 0) or 0), shorturl)
-                        else:
-                            db.hincrby(f"user_stats_{m.sender_id}", "total", 1)
-                    except Exception:
-                        pass
+                    _record_dl(m.sender_id, int(data.get("sizebytes", 0) or 0), shorturl, True)
+                    unregister_job(db, m.sender_id, _mjob["id"])
                 else:
                     failed_count += 1
+                    unregister_job(db, m.sender_id, _mjob["id"])
+                    _record_dl(m.sender_id, 0, shorturl, False)
                     await update_multi_progress(f"❌ Upload failed: `{data['file_name']}`")
 
                 try:
                     os.unlink(download)
                 except Exception:
                     pass
+                try:
+                    if _mthumb and os.path.isfile(_mthumb):
+                        os.unlink(_mthumb)
+                except Exception:
+                    pass
 
-        tasks = [process_one(idx, data) for idx, data in enumerate(files_to_process, start=1)]
-        await asyncio.gather(*tasks)
+        try:
+            tasks = [process_one(idx, data) for idx, data in enumerate(files_to_process, start=1)]
+            await asyncio.gather(*tasks, return_exceptions=True)
+        except Exception as e:
+            log.info(f"Multi download batch failed: {e}")
 
         try:
             await hm.edit(
@@ -2522,6 +2611,10 @@ async def auto_cleanup_downloads():
     while True:
         try:
             await asyncio.sleep(CLEANUP_INTERVAL)
+            try:
+                sweep_finished(db)
+            except Exception:
+                pass
             if not os.path.isdir(DOWNLOAD_DIR):
                 continue
             now = time.time()
@@ -3175,6 +3268,9 @@ async def folder_download(m: UpdateNewMessage):
     if not is_premium_user(m.sender_id):
         return await m.reply("Folder download is a **premium feature**.\nUse /plan to check plans.")
 
+    if is_maintenance() and not is_admin(m.sender_id):
+        return await m.reply("🔧 Bot is currently under maintenance. Please try again later.")
+
     hm = await m.reply("Fetching folder contents...")
 
     files = await get_files(url)
@@ -3227,6 +3323,9 @@ async def folder_download(m: UpdateNewMessage):
                 return
 
             start_time = time.time()
+            _fdest = os.path.join(DOWNLOAD_DIR, f"{idx:02d}_{os.path.basename(data['file_name'])}")
+            _fjob = register_job(db, m.sender_id, f"folder:{data['file_name']}", msg=hm)
+            _fjob["files"].append(_fdest)
 
             async def progress_bar(current, total_bytes, state="Downloading"):
                 if not cansend.can_send() or total_bytes == 0:
@@ -3241,24 +3340,26 @@ async def folder_download(m: UpdateNewMessage):
                 filled = int(pct * bar_length)
                 bar = "█" * filled + "░" * (bar_length - filled)
                 await update_progress(
-                    f"⬇️ `{data['file_name']}`\n"
+                    f"⬇️ `{caption_name(data['file_name'])}`\n"
                     f"[{bar}] {pct:.0%} | {speed:.1f} MB/s | ETA {convert_seconds(remaining)}"
                 )
 
             download = await download_file(
                 data["direct_link"],
-                os.path.join(DOWNLOAD_DIR, data["file_name"]),
+                _fdest,
                 progress_bar,
             )
             if not download:
                 download = await _retry_download_via_fallback(
                     url, data,
-                    os.path.join(DOWNLOAD_DIR, data["file_name"]),
+                    _fdest,
                     progress_bar,
                 )
             if not download:
                 done_count += 1
                 failed_count += 1
+                unregister_job(db, m.sender_id, _fjob["id"])
+                _record_dl(m.sender_id, 0, url, False)
                 await update_progress(f"❌ Download failed: `{data['file_name']}`")
                 return
 
@@ -3274,7 +3375,7 @@ async def folder_download(m: UpdateNewMessage):
             if 10240 < file_size < wm_limit and not skip_wm:
                 try:
                     await asyncio.wait_for(
-                        asyncio.get_event_loop().run_in_executor(None, add_watermark, download),
+                        asyncio.get_event_loop().run_in_executor(None, add_watermark, download, _fjob),
                         timeout=120,
                     )
                 except (asyncio.TimeoutError, Exception):
@@ -3288,6 +3389,7 @@ async def folder_download(m: UpdateNewMessage):
             except (asyncio.TimeoutError, Exception):
                 vinfo = {"duration": 0, "width": 0, "height": 0, "thumbnail": None}
             vduration = vinfo.get("duration", 0)
+            _fthumb = vinfo.get("thumbnail")
             total_time = time.time() - start_time
 
             user_tag = get_custom_tag(m.sender_id)
@@ -3300,9 +3402,9 @@ async def folder_download(m: UpdateNewMessage):
 ┃ 𝐍𝐓𝐌 𝐓𝐞𝐫𝐚 𝐁𝐨𝐱 𝐃𝐨𝐰𝐧𝐥𝐨𝐚𝐝𝐞𝐫 𝐁𝐨𝐭
 ┗━━━━━━━━━━━━━━━━━⍟
 ╔══════════⍟
-╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{data['file_name']}`
+╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{caption_name(data['file_name'])}`
 ╟➣𝙎𝙞𝙯𝙚: **{escape_markdown(data['size'])}**
-╟➣𝗗𝗶𝗿𝗲𝗰𝘁 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱 𝗟𝗶𝗻𝗸 : [Click here]({data['direct_link']})
+╟➣𝗗𝗶𝗿𝗲𝗰𝘁 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱 𝗟𝗶𝗻𝗸 : [Click here]({data['direct_link'].replace(')', '%29')})
 ╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}{tag_str}
 ╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(user_username or '-')}
 ╟➣𝐓𝐨𝐭𝐚𝐥 𝐓𝐢𝐦𝐞 𝐓𝐚𝐤𝐞𝐧: {total_time:.1f} sec
@@ -3313,9 +3415,9 @@ async def folder_download(m: UpdateNewMessage):
             sent_id = None
             try:
                 api_res = await send_document_via_api(
-                    TG_API_BASE, BOT_TOKEN, PRIVATE_CHAT_ID, download, caption, data["file_name"], None,
+                    TG_API_BASE, BOT_TOKEN, PRIVATE_CHAT_ID, download, caption, data["file_name"], progress_bar,
                     duration=vinfo.get("duration", 0), width=vinfo.get("width", 0),
-                    height=vinfo.get("height", 0), thumb=vinfo.get("thumbnail"),
+                    height=vinfo.get("height", 0), thumb=_fthumb,
                 )
                 if api_res.get("ok"):
                     sent_id = api_res["result"]["message_id"]
@@ -3327,6 +3429,8 @@ async def folder_download(m: UpdateNewMessage):
                     file = await bot.send_file(
                         PRIVATE_CHAT_ID, file=download, caption=caption,
                         video=True, supports_streaming=True, spoiler=True,
+                        thumb=_fthumb if _fthumb and os.path.isfile(_fthumb) else None,
+                        progress_callback=progress_bar,
                     )
                     sent_id = file.id
                 except Exception:
@@ -3335,31 +3439,44 @@ async def folder_download(m: UpdateNewMessage):
             done_count += 1
             if sent_id:
                 sent_count += 1
-                try:
-                    if "_track_dl" in globals() and callable(globals()["_track_dl"]):
-                        globals()["_track_dl"](db, m.sender_id, int(data.get("sizebytes", 0) or 0), url)
-                except Exception:
-                    pass
+                _record_dl(m.sender_id, int(data.get("sizebytes", 0) or 0), url, True)
                 try:
                     await bot(ForwardMessagesRequest(
                         from_peer=PRIVATE_CHAT_ID, id=[sent_id],
                         to_peer=m.chat.id, drop_author=True, background=True,
                     ))
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.info(f"Forward failed: {e}")
+                    failed_count += 1
+                    sent_count -= 1
+                    unregister_job(db, m.sender_id, _fjob["id"])
+                    _record_dl(m.sender_id, 0, url, False)
+                    await update_progress(f"❌ Delivery failed: `{data['file_name']}`")
+                    return
+                unregister_job(db, m.sender_id, _fjob["id"])
                 await update_progress(f"✅ Sent `{data['file_name']}`")
             else:
                 failed_count += 1
+                unregister_job(db, m.sender_id, _fjob["id"])
+                _record_dl(m.sender_id, 0, url, False)
                 await update_progress(f"❌ Upload failed: `{data['file_name']}`")
 
             try:
                 os.unlink(download)
             except Exception:
                 pass
+            try:
+                if _fthumb and os.path.isfile(_fthumb):
+                    os.unlink(_fthumb)
+            except Exception:
+                pass
 
     tasks = [process_file(idx, data) for idx, data in enumerate(files, start=1)]
     await update_progress("Starting downloads...")
-    await asyncio.gather(*tasks)
+    try:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    except Exception as e:
+        log.info(f"Folder batch failed: {e}")
 
     await hm.edit(
         f"✅ Folder complete!\n"
@@ -4153,6 +4270,22 @@ try:
 except Exception as e:
     log.warning(f"backup pack not loaded: {e}")
 
+try:
+    from commands.cancel import register as _reg_cancel
+    _reg_cancel(bot, {"db": db})
+    _loaded_packs.append("cancel")
+except Exception as e:
+    log.warning(f"cancel pack not loaded: {e}")
+
+try:
+    from commands.cacheux import register as _reg_cacheux
+    _reg_cacheux(bot, {"db": db, "get_custom_tag": get_custom_tag,
+                       "escape_markdown": escape_markdown,
+                       "storage_chat": lambda: globals().get("PRIVATE_CHAT_ID")})
+    _loaded_packs.append("cacheux")
+except Exception as e:
+    log.warning(f"cacheux pack not loaded: {e}")
+
 # Start the cleanup task before running the bot
 cleanup_task = bot.loop.create_task(auto_cleanup_downloads())
 
@@ -4193,7 +4326,7 @@ async def _boot_notify():
             "✅ **System Online**\n\n"
             f"🆔 Build: `{sha}` (#{boots})\n"
             f"🕒 Started: `{started}`\n"
-            f"📦 Packs: `{packs}/6 loaded`\n"
+            f"📦 Packs: `{packs}/8 loaded`\n"
             f"💾 Storage: `{PRIVATE_CHAT_ID}`\n"
             f"🛠 Maintenance: `{maint}`"
         )
