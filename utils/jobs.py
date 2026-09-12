@@ -227,6 +227,15 @@ def request_cancel(db, user_id, job_id=None, cancel_all=False):
                     _os.unlink(path)
             except Exception:
                 pass
+        try:
+            release_inflight(db, job.get("shorturl"))
+        except Exception:
+            pass
+        try:
+            if job.get("shorturl"):
+                db.delete(f"dl:wait:{job.get('shorturl')}")
+        except Exception:
+            pass
         ACTIVE.pop(jid, None)
         try:
             db.hdel(_job_key(user_id), jid)

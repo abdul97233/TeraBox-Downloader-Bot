@@ -2102,6 +2102,25 @@ async def _retry_download_via_fallback(url, data, dest, progress_bar):
         return False
 
 
+async def _fail_single_dl(db, shorturl, hm, text, uid, job_id):
+    """Failed download: notify waiters, release claim, unregister, record, edit."""
+    try:
+        for _w in pop_waiters(db, shorturl):
+            try:
+                await bot.send_message(_w, "⏳ The file you were waiting for failed. Please resend the link.")
+            except Exception:
+                pass
+    except Exception:
+        pass
+    release_inflight(db, shorturl)
+    try:
+        unregister_job(db, uid, job_id)
+    except Exception:
+        pass
+    _record_dl(uid, 0, shorturl, False)
+    return await hm.edit(text, parse_mode="markdown")
+
+
 async def handle_message(m: Message):
 
     url = get_urls_from_string(m.text)
@@ -2306,6 +2325,7 @@ async def handle_message(m: Message):
         _dest = os.path.join(DOWNLOAD_DIR, os.path.basename(data["file_name"]))
         _job = register_job(db, m.sender_id, f"dl:{data['file_name']}", msg=hm)
         _job["files"].append(_dest)
+        _job["shorturl"] = shorturl
         _inflight_mine = claim_inflight(db, shorturl)
         if not _inflight_mine:
             add_waiter(db, shorturl, m.chat.id)
@@ -2321,12 +2341,10 @@ async def handle_message(m: Message):
             )
         total_time = time.time() - start_time
         if not download:
-            release_inflight(db, shorturl)
-            unregister_job(db, m.sender_id, _job["id"])
-            _record_dl(m.sender_id, 0, shorturl, False)
-            return await hm.edit(
+            return await _fail_single_dl(
+                db, shorturl, hm,
                 f"Sorry! Download Failed but you can download it from [here]({url}).",
-                parse_mode="markdown",
+                m.sender_id, _job["id"],
             )
 
         try:
@@ -2450,12 +2468,10 @@ async def handle_message(m: Message):
                     os.unlink(download)
                 except Exception:
                     pass
-                release_inflight(db, shorturl)
-                unregister_job(db, m.sender_id, _job["id"])
-                _record_dl(m.sender_id, 0, shorturl, False)
-                return await hm.edit(
+                return await _fail_single_dl(
+                    db, shorturl, hm,
                     f"Sorry! Upload Failed but you can download it from [here]({url}).",
-                    parse_mode="markdown",
+                    m.sender_id, _job["id"],
                 )
 
         if sent_id:
@@ -2476,14 +2492,15 @@ async def handle_message(m: Message):
                 await bot(ForwardMessagesRequest(**fwd_kwargs))
             except Exception as e:
                 log.info(f"Forward failed: {e}")
-                release_inflight(db, shorturl)
-                unregister_job(db, m.sender_id, _job["id"])
-                _record_dl(m.sender_id, 0, shorturl, False)
                 try:
                     os.unlink(download)
                 except Exception:
                     pass
-                return await hm.edit("Upload succeeded but delivery failed — please try again.")
+                return await _fail_single_dl(
+                    db, shorturl, hm,
+                    "Upload succeeded but delivery failed — please try again.",
+                    m.sender_id, _job["id"],
+                )
 
             try:
                 os.unlink(download)
@@ -2571,6 +2588,7 @@ async def handle_message(m: Message):
                 start_time = time.time()
                 _mdest = os.path.join(DOWNLOAD_DIR, f"{idx:02d}_{os.path.basename(data['file_name'])}")
                 _mjob = register_job(db, m.sender_id, f"dl:{data['file_name']}", msg=hm)
+                _mjob["shorturl"] = shorturl
                 _mjob["files"].append(_mdest)
 
                 async def progress_bar(current, total_bytes, state="Downloading"):
@@ -3597,6 +3615,7 @@ async def folder_download(m: UpdateNewMessage):
             start_time = time.time()
             _fdest = os.path.join(DOWNLOAD_DIR, f"{idx:02d}_{os.path.basename(data['file_name'])}")
             _fjob = register_job(db, m.sender_id, f"folder:{data['file_name']}", msg=hm)
+            _fjob["shorturl"] = url
             _fjob["files"].append(_fdest)
 
             async def progress_bar(current, total_bytes, state="Downloading"):
@@ -4429,6 +4448,17 @@ try:
     _reminder_task = bot.loop.create_task(_rem_loop(bot, db, 1))
 except Exception as e:
     log.warning(f"referral pack not loaded: {e}")
+
+# Stale in-flight claims never survive a restart (no workers left) — clear once.
+for _stale_pat in ("dl:inflight:*", "dl:wait:*"):
+    try:
+        for _k in db.scan_iter(_stale_pat, count=200):
+            try:
+                db.delete(_k)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 # Start the cleanup task before running the bot
 cleanup_task = bot.loop.create_task(auto_cleanup_downloads())
