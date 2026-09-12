@@ -138,6 +138,11 @@ def grant_premium(user_id, days):
     expiry = int(_time.time()) + (days * 86400)
     db.hset(PREMIUM_EXPIRY_KEY, str(user_id), expiry)
     db.sadd(PREMIUM_SET_KEY, str(user_id))
+    for _flag in ("reminder_3d", "reminder_1d", "reminder_expired"):
+        try:
+            db.delete(f"{_flag}:{user_id}")
+        except Exception:
+            pass
 
 
 def revoke_premium(user_id):
@@ -266,6 +271,19 @@ def _record_dl(uid, size, link, ok=True):
             db.hincrby(f"user_stats_{uid}", "total", 1)
     except Exception:
         pass
+    if ok:
+        try:
+            from commands.referral import credit_activation
+            total = int(db.hget(f"user_stats_{uid}", "total") or 0)
+            if total == 1:
+                rewarded, _ref, _n, _days = credit_activation(db, uid, grant_premium)
+                if rewarded:
+                    try:
+                        log.info(f"Referral reward: {_ref} +{_days}d (total {_n})")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
 # Define /info and /id commands to display user information
 @bot.on(
@@ -980,6 +998,21 @@ async def start(m: UpdateNewMessage):
     user = await bot.get_entity(user_id)
     name = user.first_name
 
+    # Referral capture: /start ref_CODE (deep link). No self-refs, one attributer.
+    try:
+        from commands.referral import parse_start_referral
+        _ref_code = parse_start_referral(m.text)
+        if _ref_code:
+            try:
+                _referrer = db.hget("ref:code_by_code", _ref_code)
+            except Exception:
+                _referrer = None
+            if _referrer:
+                from commands.referral import record_referral_start
+                record_referral_start(db, _referrer, user_id)
+    except Exception:
+        pass
+
     # Notify admins (skip when the starter is an admin themselves)
     if user_id not in get_all_admins():
         admin_message = f"👤 New user started bot:\nName: {name}\nUsername: @{user.username or '-'}\nID: `{user_id}`"
@@ -1156,6 +1189,7 @@ async def cb_premium(e):
 • ✅ Custom thumbnail
 • ✅ Folder download
 
+👥 Earn free Premium: /referral
 Contact @abdul97233 to purchase.
 """
     buttons = [
@@ -1325,6 +1359,9 @@ Choose an admin action 👇
         [
             Button.inline("📝 Logs", data="admin_logs"),
             Button.inline("📢 Broadcast", data="admin_broadcast"),
+        ],
+        [
+            Button.inline("🔧 Maintenance", data="admin_maint"),
         ],
         [
             Button.inline("🩺 API Health", data="admin_api"),
@@ -1562,6 +1599,54 @@ async def cb_admin_broadcast(e):
 """
     buttons = [[Button.inline("◀️ Back", data="menu_admin")]]
     await e.edit(text, parse_mode="markdown", buttons=buttons)
+
+
+@bot.on(events.CallbackQuery(data=b"admin_maint"))
+async def cb_admin_maint(e):
+    if not is_admin(e.sender_id):
+        return await e.answer("Access denied!", alert=True)
+    try:
+        from commands.maintenance import get_maintenance
+        is_on, reason = get_maintenance(db, MAINTENANCE_KEY)
+    except Exception:
+        is_on, reason = False, ""
+    text = (
+        "🔧 Maintenance Mode\n\n"
+        f"Status: **{'ON' if is_on else 'OFF'}**"
+        + (f"\nReason: {reason}" if reason else "")
+        + "\n\nON blocks new downloads for normal users; admins keep full access."
+    )
+    buttons = [
+        [Button.inline("🔧 Turn ON", data="mt_on"),
+         Button.inline("✅ Turn OFF", data="mt_off")],
+        [Button.inline("◀️ Back", data="menu_admin")],
+    ]
+    await e.edit(text, parse_mode="markdown", buttons=buttons)
+
+
+@bot.on(events.CallbackQuery(pattern=rb"mt_(on|off)"))
+async def cb_maint_toggle(e):
+    if not is_admin(e.sender_id):
+        return await e.answer("Access denied!", alert=True)
+    action = e.data.decode(errors="ignore").split("_", 1)[1]
+    try:
+        from commands.maintenance import set_maintenance
+        set_maintenance(db, MAINTENANCE_KEY, action == "on", "")
+        log_audit(f"MAINTENANCE_{action.upper()}_BTN", e.sender_id, "")
+    except Exception:
+        pass
+    try:
+        await e.answer(f"Maintenance {'ON' if action == 'on' else 'OFF'}.", alert=False)
+    except Exception:
+        pass
+    try:
+        await e.edit(
+            f"🔧 Maintenance Mode\n\nStatus: **{'ON' if action == 'on' else 'OFF'}**",
+            parse_mode="markdown",
+            buttons=[[Button.inline("◀️ Back", data="menu_admin")]],
+        )
+    except Exception:
+        pass
 
 
 @bot.on(events.CallbackQuery(data=b"admin_api"))
@@ -2999,6 +3084,9 @@ async def admin_commands(m: UpdateNewMessage):
 /quick `<link>` — Fast single-file download
 /preview `<link>` — Preview first 3 files
 /mystatus — Your premium/tag/stats
+/mystats — Download statistics
+/referral — Invite friends, earn Premium
+/cancel — Cancel active downloads
 /setthumb — Reply to image → set thumbnail (premium)
 /removethumb — Remove custom thumbnail
 /lang `<code>` — Set language (en/ne/hi)
@@ -4147,6 +4235,21 @@ try:
 except Exception as e:
     log.warning(f"media pack not loaded: {e}")
 
+try:
+    from commands.mystats import register as _reg_mystats
+    _reg_mystats(bot, {"db": db, "is_premium_user": is_premium_user})
+    _loaded_packs.append("mystats")
+except Exception as e:
+    log.warning(f"mystats pack not loaded: {e}")
+
+try:
+    from commands.referral import register as _reg_referral, reminder_loop as _rem_loop
+    _reg_referral(bot, {"db": db, "is_admin": is_admin, "grant_premium": grant_premium})
+    _loaded_packs.append("referral")
+    _reminder_task = bot.loop.create_task(_rem_loop(bot, db, 1))
+except Exception as e:
+    log.warning(f"referral pack not loaded: {e}")
+
 # Start the cleanup task before running the bot
 cleanup_task = bot.loop.create_task(auto_cleanup_downloads())
 
@@ -4187,7 +4290,7 @@ async def _boot_notify():
             "✅ **System Online**\n\n"
             f"🆔 Build: `{sha}` (#{boots})\n"
             f"🕒 Started: `{started}`\n"
-            f"📦 Packs: `{packs}/9 loaded`\n"
+            f"📦 Packs: `{packs}/11 loaded`\n"
             f"💾 Storage: `{PRIVATE_CHAT_ID}`\n"
             f"🛠 Maintenance: `{maint}`"
         )
