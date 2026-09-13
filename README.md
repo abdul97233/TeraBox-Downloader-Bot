@@ -154,7 +154,7 @@ Forwards to you instantly
 | `/setthumb` | Set custom thumbnail (reply to image) |
 | `/removethumb` | Remove custom thumbnail |
 | `/lang ne` | Set language (en/ne/hi) |
-| `/referral` | Get your referral link + stats |
+| `/ref` | Get your referral link + stats |
 | `/search <query>` | Search file library |
 | `/redeem <code>` | Redeem a gift card |
 

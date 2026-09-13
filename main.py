@@ -1259,7 +1259,7 @@ async def cb_premium(e):
 • ✅ Custom thumbnail
 • ✅ Folder download
 
-👥 Earn free Premium: /referral
+👥 Earn free Premium: /ref
 Contact @abdul97233 to purchase.
 """
     buttons = [
@@ -1314,7 +1314,7 @@ async def cb_referral_menu(e):
         f"Your link:\n`{link}`\n\n"
         f"Invited: **{invited}** | Successful: **{ok}**\n"
         "Rewards: 5 → 1d Premium, 10 → 3d, 25 → 7d\n\n"
-        "Full details: /referral"
+        "Full details: /ref"
     )
     buttons = [[Button.inline("◀️ Back", data="menu_main")]]
     await e.edit(text, parse_mode="markdown", buttons=buttons)
@@ -3363,7 +3363,7 @@ async def admin_commands(m: UpdateNewMessage):
 /search `<name>` — Find files in the library
 /mystatus — Your premium/tag/stats
 /mystats — Download statistics
-/referral — Invite friends, earn Premium
+/ref — Invite friends, earn Premium
 /cancel — Cancel active downloads
 /setthumb — Reply to image → set thumbnail (premium)
 /removethumb — Remove custom thumbnail

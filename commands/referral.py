@@ -206,7 +206,7 @@ def register(bot, ctx):
     db = ctx["db"]
     grant_premium = ctx["grant_premium"]
 
-    @bot.on(events.NewMessage(pattern=r"^/referral$", incoming=True, outgoing=False))
+    @bot.on(events.NewMessage(pattern=r"^/(ref|refer|referral)$", incoming=True, outgoing=False))
     async def _referral(m):
         user_id = m.sender_id
         code = _code_for(user_id)
