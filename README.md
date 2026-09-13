@@ -13,7 +13,7 @@
 
 <br>
 
-[🤖 Try Bot](https://t.me/tera_NTM_bot) • [💬 Support Group](https://t.me/ntmchat) • [📢 Channel](https://t.me/ntmpro) • [⭐ GitHub](https://github.com/abdul97233/TeraBox-Downloader-Bot)
+[🤖 Try Bot](https://t.me/tera_NTM_bot) · [💬 Support Group](https://t.me/ntmchat) · [📢 Channel](https://t.me/ntmpro) · [⭐ GitHub](https://github.com/abdul97233/TeraBox-Downloader-Bot)
 
 </div>
 
@@ -41,53 +41,74 @@ Forwards to you instantly
 
 ### Download
 - Send any TeraBox link → instant download
-- **39+ supported domains** (terabox.com, 1024terabox.com, dubox, mirrobox, etc.)
-- **20+ video formats** (mp4, mkv, webm, mov, avi, flv, wmv, etc.)
+- **57 video extensions** supported (mp4, mkv, webm, mov, avi, flv, wmv, m4v, 3gp, ts, etc.)
+- **50+ supported domains** (terabox.com, 1024terabox.com, dubox, mirrobox, etc.)
 - Quality selector — `/dl 720p <link>` or `/dl 1080p <link>`
 - Folder download — `/folder <link>` (premium)
 - Batch multi-file download
 - Fallback API — if primary fails, auto-tries secondary
+- Cache system — instantly re-sends previously downloaded files
+- Searchable library — `/search <query>` to find past downloads
 
 ### Premium System
 - Time-based expiry (1d, 2d, 3d, 7d, 1w, 1m, unlimited)
-- Gift card system with duration
+- Gift card system with duration and auto-redeem buttons
 - 1 GC per user per premium cycle
 - Unlimited downloads, no size limit, multi-file
 - Custom thumbnail for premium users
+- `(OWNER)` tag — auto-applied/removed with premium status
+- Expiry reminders — 3-day, 1-day, and expired notifications
 
 ### Media Tools
-- `/mp3` — Extract audio from any video
-- `/compress` — Compress video (low/mid quality)
-- Video watermark — `@TERA_NTM_BOT` on every video
+- `/mp3` — Extract audio with bitrate selector (128/192/256/320 kbps)
+- `/compress` — Compress video with resolution selector (480p/720p/1080p, no upscaling)
+- Video watermark — `@TERA_NTM_BOT` on every video (mp4 only, veryfast preset)
 - Video metadata — duration, resolution, thumbnail
 
 ### User Experience
 - **Modern button-based UI** — no need to memorize commands
 - **3 languages** — English, Nepali, Hindi
 - Download history — `/history`
-- Auto-expired premium
-- Instant cached forwarding
+- My Stats — `/mystats` (personal download stats)
+- My Status — `/mystatus` (premium, tag, member-since, download counts)
+- Referral system — `/referral` (tiered rewards: 5 → 1d, 10 → 3d, 25 → 7d)
+- Quick download — `/quick <link>` (skip folder detection)
+- Preview — `/preview <link>` (peek first 3 files in a folder)
+- Cancel — `/cancel` with tap-to-cancel buttons on progress messages
 
 ### Admin Panel
 - Dynamic admin system — add/remove admins from bot
-- `/ban` `/unban` — ban users
-- `/broadcast` — send message to all users
-- `/announce 30 <msg>` — scheduled broadcast
+- `/finduser` — lookup any user's status/premium/tag
+- `/ban` `/unban` — ban/unban users
+- `/addpremium` `/delpremium` `/renew` — manage premium
+- `/masstag` `/untag` — bulk tag/untag users
 - `/gen 7d 5` — generate 5 gift cards for 7 days
-- `/gclist` — list all gift cards
-- `/stats` — bot statistics
-- `/usage` — disk, RAM, CPU usage
-- `/logs` — recent error logs
-- `/backup` — export Redis data
+- `/gclist` — paginated gift card list with usage tracking
+- `/stats` — bot statistics with top users/links
+- `/userstats` — per-user download stats
+- `/apihealth` — check API response times
+- `/errors` — recent error log entries
+- `/broadcast` — send message to all users (reply-to-forward preserves format)
+- `/announce 30 <msg>` — scheduled broadcast
+- `/cleandownloads` — clean downloads folder
+- `/maintenance` — toggle maintenance mode
+- `/logrotate` — rotate bot.log
+- `/configview` `/configset` `/configreset` — runtime config editor
 
-### Safety
+### Safety & Reliability
 - `/panic` — emergency stop all services
 - `/resume` — bring bot back online
-- `/maintenance` — toggle maintenance mode
-- Anti-spam cooldown (configurable)
-- Max files per request limit
+- `/backup` `/restore` — full Redis snapshot and merge restore
+- `/setapi` `/reloadconfig` — rotate API templates live
+- Parallel downloads — 5 concurrent, 10 total backpressure
+- FloodWait protection — global edit backoff, patient forwarding/replies
+- In-flight dedup — prevents duplicate downloads for same link
+- Cancel with FFmpeg kill — stops running video processing
 - Audit log — tracks all admin actions
 - Force channel/group join
+- Anti-spam cooldown (configurable)
+- Max files per request limit
+- API log redaction — URLs/tokens stripped from logs
 
 ---
 
@@ -102,60 +123,100 @@ Forwards to you instantly
 | Folder download | ❌ | ✅ |
 | Custom thumbnail | ❌ | ✅ |
 | Priority speed | ❌ | ✅ |
+| Referral rewards | ❌ | ✅ |
+| MP3/Compress | ✅ | ✅ |
 | Watermark | ✅ | ✅ |
 
 ---
 
 ## Commands
 
-### User
+### User Commands
+
 | Command | Description |
 |---------|-------------|
-| `/start` | Open main menu |
+| `/start` | Open main menu with button UI |
 | `/help` | Show commands |
 | `/info` | Your profile & plan |
-| `/plan` | View plans |
-| `/redeem <code>` | Redeem gift card |
+| `/id` | Your user ID |
+| `/plan` | View premium plans |
+| `/mystatus` | Your premium/tag/stats |
+| `/mystats` | Personal download statistics |
 | `/history` | Your download history |
+| `/dl <link>` | Download original quality |
 | `/dl 720p <link>` | Download in quality |
-| `/folder <link>` | Download folder (⭐) |
-| `/mp3` | Reply to video → audio |
+| `/quick <link>` | Fast single-file download |
+| `/folder <link>` | Download entire folder (premium) |
+| `/preview <link>` | Preview first 3 files in folder |
+| `/cancel` | Cancel active downloads |
+| `/mp3` | Reply to video → extract audio |
 | `/compress` | Reply to video → compress |
-| `/setthumb` | Set thumbnail (⭐) |
-| `/lang ne` | Set language |
+| `/setthumb` | Set custom thumbnail (reply to image) |
+| `/removethumb` | Remove custom thumbnail |
+| `/lang ne` | Set language (en/ne/hi) |
+| `/referral` | Get your referral link + stats |
+| `/search <query>` | Search file library |
+| `/redeem <code>` | Redeem a gift card |
 
-### Admin
+### Admin Commands
+
 | Command | Description |
 |---------|-------------|
-| `/pre <id> <dur>` | Promote to premium |
-| `/de <id>` | Demote from premium |
-| `/premium_users` | List premium users |
+| `/finduser <id>` | Lookup user status/premium/tag |
+| `/ban <id>` | Ban a user |
+| `/unban <id>` | Unban a user |
+| `/addpremium <id> <days>` | Grant premium |
+| `/delpremium <id>` | Revoke premium |
+| `/renew <id> <days>` | Extend premium |
+| `/masstag <id1,id2,...> <tag>` | Tag multiple users |
+| `/untag <id1,id2,...>` | Remove tags |
+| `/gcheck <code>` | Validate a gift card |
 | `/gen <dur> [n]` | Generate gift cards |
-| `/gclist` | List all gift cards |
-| `/ban <id>` | Ban user |
-| `/unban <id>` | Unban user |
-| `/broadcast <msg>` | Broadcast to all |
-| `/announce <min> <msg>` | Scheduled broadcast |
+| `/gclist` | List gift cards (paginated) |
+| `/gcdel <code>` | Delete a gift card |
+| `/gctrack` | Track gift card usage |
 | `/stats` | Bot statistics |
-| `/usage` | Resource usage |
-| `/logs` | Error logs |
+| `/userstats [id>` | Per-user stats |
+| `/apihealth` | API health check |
+| `/errors [n]` | Recent errors |
+| `/broadcast <msg>` | Broadcast to all users |
+| `/cleandownloads` | Clean downloads folder |
 
-### Owner Only
+### Owner Only Commands
+
 | Command | Description |
 |---------|-------------|
-| `/panic` | 🚨 Emergency stop |
-| `/resume` | Bring bot online |
-| `/maintenance` | Toggle maintenance |
 | `/addadmin <id>` | Add admin |
 | `/removeadmin <id>` | Remove admin |
 | `/adminlist` | List all admins |
-| `/auditlog` | View admin action log |
-| `/backup` | Export Redis data |
+| `/panic` | Emergency stop |
+| `/resume` | Bring bot online |
+| `/maintenance` | Toggle maintenance mode |
 | `/update` | Pull & restart |
+| `/restart` | Normal restart |
+| `/force` | Force restart |
+| `/setstorage <id>` | Set storage chat ID |
+| `/getstorage` | Show storage IDs |
+| `/setforce <type> <@chat>` | Add force channel/group |
+| `/removeforce <type> <@chat>` | Remove force channel/group |
 | `/maxfiles <n>` | Set file limit |
 | `/setcooldown <s>` | Set cooldown |
-| `/setstorage <id>` | Update storage chat |
+| `/setplan <text>` | Update plan text |
+| `/announce <min> <msg>` | Scheduled broadcast |
+| `/setapi` | Rotate API template |
+| `/reloadconfig` | Reload API templates |
+| `/logrotate` | Rotate bot.log |
+| `/configview` | View runtime config |
+| `/configset` | Edit runtime config |
+| `/configreset` | Reset config key |
+| `/backup` | Export Redis data |
+| `/restore` | Restore from backup |
+| `/auditlog` | View admin action log |
 | `/allowredeem <id>` | Reset GC redemption |
+| `/settag <id> <tag>` | Set custom tag |
+| `/tag` | View your custom tag |
+| `/reindex` | Rebuild file library index |
+| `/refstats` | Referral statistics |
 
 ---
 
@@ -196,6 +257,14 @@ disown
 
 ### Update
 
+Use the built-in `/update` command — it stashes `config.py`, pulls latest code, and restarts automatically:
+
+```
+/update
+```
+
+Or manually:
+
 ```bash
 git pull origin main
 pkill -f "python main.py"
@@ -207,46 +276,52 @@ disown
 
 ## Configuration
 
-Create `config.py`:
+Copy `config.example.py` to `config.py` and fill in your credentials:
 
 ```python
-# Telegram
-API_ID = 123456
+# Telegram API — get from https://my.telegram.org/apps
+API_ID = 12345678
 API_HASH = "your_api_hash"
+
+# Bot token from @BotFather
 BOT_TOKEN = "your_bot_token"
 
 # Redis
 HOST = "localhost"
 PORT = 6379
-PASSWORD = ""
+PASSWORD = None
 
-# Bot
+# Storage chat (files are uploaded here, then forwarded)
 PRIVATE_CHAT_ID = -1001234567890
+
+# Download folder on VPS
 DOWNLOAD_DIR = "downloads"
 
-# Admin
+# Admins (owner is automatic)
 OWNER_ID = 123456789
 ADMINS = [123456789]
 
-# Force Join
+# Force join (users must join before using bot)
 FORCE_CHANNELS = ["@your_channel"]
 FORCE_GROUPS = ["@your_group"]
 
 # TeraBox API
-TERABOX_API_BASE = "https://saiyanteraboxapi.saiyanprojects.com/"
+TERABOX_API_BASE = "https://your-terabox-api.com/"
 TERABOX_API_TOKEN = "your_token"
 TERABOX_API_TEMPLATE = f"{TERABOX_API_BASE}?authkey={TERABOX_API_TOKEN}&url={{url}}"
 
 # Fallback API
-TERABOX_FALLBACK_API_BASE = "https://saiyanteraboxapi2.saiyanprojects.com/"
+TERABOX_FALLBACK_API_BASE = "https://your-fallback-api.com/"
 TERABOX_FALLBACK_API_TEMPLATE = f"{TERABOX_FALLBACK_API_BASE}?authkey={TERABOX_API_TOKEN}&url={{url}}"
 
 # Self-hosted Bot API (2GB uploads)
 TG_API_BASE = "https://your-bot-api-server.com"
 
 # GitHub (for /update)
-GITHUB_REPO = "https://github.com/abdul97233/TeraBox-Downloader-Bot"
+GITHUB_REPO = "https://github.com/your-username/your-repo"
 ```
+
+**Never commit `config.py` to GitHub.** It is protected by `.gitignore`.
 
 ---
 
@@ -254,13 +329,47 @@ GITHUB_REPO = "https://github.com/abdul97233/TeraBox-Downloader-Bot"
 
 ```
 TeraBox-Downloader-Bot/
-├── main.py          # Bot entry point, handlers, UI
-├── terabox.py       # TeraBox API integration (async)
-├── tools.py         # Download, upload, watermark, utils
-├── config.py        # Your credentials (not pushed)
-├── cansend.py       # Rate limiter for progress bars
-├── requirements.txt # Python dependencies
-└── README.md        # This file
+├── main.py              # Bot entry point, handlers, button menus, download flows
+├── terabox.py           # TeraBox API integration (primary + fallback)
+├── tools.py             # Download, upload, watermark, video info, utilities
+├── cansend.py           # Rate throttle for progress bar edits
+├── FastTelethon.py      # Fast upload/download helper
+├── config.py            # Your credentials (NOT pushed)
+├── config.example.py    # Template for config.py
+├── requirements.txt     # Python dependencies
+├── setup.sh             # VPS setup script
+│
+├── commands/            # Modular command handlers
+│   ├── admin_users.py   # /finduser, /ban, /unban, /addpremium, /masstag
+│   ├── analytics.py     # /stats, /userstats, /apihealth, /errors
+│   ├── backup.py        # /backup, /restore
+│   ├── cacheux.py       # Cache prompt (auto-send + Download Again)
+│   ├── cancel.py        # /cancel with tap-to-cancel buttons
+│   ├── config_editor.py # /configview, /configset, /configreset
+│   ├── library.py       # /search, /reindex (searchable library)
+│   ├── maintenance.py   # /maintenance, /logrotate, /setapi, /reloadconfig
+│   ├── media.py         # /mp3, /compress (bitrate/resolution menus)
+│   ├── mystats.py       # /mystats
+│   ├── redeem_core.py   # Shared gift card redeem logic
+│   ├── referral.py      # /referral, /refstats, expiry reminders
+│   ├── user_status.py   # /mystatus text builder
+│   └── ux.py            # /broadcast, /quick, /preview, gift card buttons
+│
+├── utils/               # Shared utilities
+│   ├── errors.py        # Centralized user-facing error messages
+│   ├── flood.py         # FloodWait protection (edit backoff, patient helpers)
+│   ├── jobs.py          # Job registry, FFmpeg kill-on-cancel, inflight dedup
+│   ├── logx.py          # API log redaction (URLs/tokens stripped)
+│   ├── premium.py       # Premium grant/revoke/check + tag cleanup
+│   └── tags.py          # Tag resolve/set/clear with premium expiry
+│
+├── handlers/            # Specialized handlers
+│   └── folder_handler.py # Folder download orchestration
+│
+├── models/              # Data models (reserved)
+├── downloads/           # Temporary download storage
+├── bot.log              # Runtime log (not pushed)
+└── .gitignore           # Protects secrets and temp files
 ```
 
 ---
@@ -270,13 +379,15 @@ TeraBox-Downloader-Bot/
 | Component | Technology |
 |-----------|-----------|
 | Language | Python 3.9+ |
-| Bot Framework | Telethon (MTProto) |
-| Bot API Upload | aiohttp + self-hosted Bot API |
-| Download | aiohttp (async, 2MB chunks) |
-| Database | Redis |
-| Video Processing | ffmpeg + OpenCV |
-| Watermark | ffmpeg drawtext |
-| Parallel | asyncio (non-blocking) |
+| Bot Framework | Telethon 1.42 (MTProto) |
+| Bot API Upload | aiohttp + self-hosted Bot API (2GB) |
+| Download | aiohttp (async, 3 retries) |
+| Database | Redis (cloud) |
+| Video Processing | ffmpeg (watermark, compress, extract) |
+| Watermark | ffmpeg drawtext (veryfast preset) |
+| Parallel | asyncio (5 concurrent, 10 backpressure) |
+| Flood Protection | Custom backoff (patient_edit, patient_forward) |
+| Cancellation | FFmpeg kill + job registry |
 
 ---
 
@@ -290,23 +401,18 @@ TeraBox-Downloader-Bot/
 | ffmpeg not found | `sudo apt install ffmpeg` |
 | Upload fails | Check `TG_API_BASE` server status |
 | Memory full | Run `/cleandownloads` or `/usage` |
+| FloodWait errors | Normal during heavy use — auto-recovers in seconds |
+| "Server busy" | Max concurrent downloads reached — wait for current ones to finish |
+| Stray backslashes | Legacy Markdown escaping — already fixed (v2) |
 
 ---
 
 ## Security
 
 - Never commit `config.py` to GitHub
-- Use `.gitignore`:
-  ```
-  config.py
-  *.session
-  *.session-journal
-  __pycache__/
-  venv/
-  bot.log
-  downloads/
-  ```
-- If credentials leak: rotate immediately
+- `.gitignore` protects: `config.py`, `*.session`, `font.ttf`, `thumb.jpg`, `*.wm.mp4`, `downloads/`, `bot.log`
+- API logs are redacted — URLs and tokens are stripped
+- Credential leaks: rotate immediately via BotFather + Redis CLI
 
 ---
 
