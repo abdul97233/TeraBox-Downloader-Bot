@@ -577,7 +577,12 @@ async def download_file(
                 if attempt < retries:
                     from utils.logx import safe_exc
                     log.info(f"Connection error on attempt {attempt}/{retries}: {safe_exc(e)}")
-                    await asyncio.sleep(3 * attempt)
+                    try:
+                        if os.path.exists(filename):
+                            os.remove(filename)
+                    except Exception:
+                        pass
+                    await asyncio.sleep(5 * attempt)
                     continue
                 raise
 
@@ -586,8 +591,12 @@ async def download_file(
                 actual = os.path.getsize(filename)
                 if actual != total:
                     log.info(f"Incomplete download: {actual}/{total} bytes")
+                    try:
+                        os.remove(filename)
+                    except Exception:
+                        pass
                     if attempt < retries:
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(5 * attempt)
                         continue
                     return False
 
