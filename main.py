@@ -4598,22 +4598,69 @@ async def _boot_notify():
             maint = "?"
         packs = len(_loaded_packs) if "_loaded_packs" in globals() else 0
         started = time.strftime("%d %b %Y, %I:%M %p")
+
+        # Stats
+        try:
+            all_users = [k for k in db.scan_iter("user_stats_*")]
+            total_users = len(all_users)
+        except Exception:
+            total_users = "?"
+        try:
+            premium_users = db.hlen("premium_expiry") or 0
+        except Exception:
+            premium_users = "?"
+        try:
+            admin_count = len(get_all_admins())
+        except Exception:
+            admin_count = "?"
+        try:
+            import sys as _sys
+            py_ver = f"{_sys.version_info.major}.{_sys.version_info.minor}.{_sys.version_info.micro}"
+        except Exception:
+            py_ver = "?"
+        try:
+            import telethon as _t
+            tl_ver = _t.__version__
+        except Exception:
+            tl_ver = "?"
+        try:
+            import shutil
+            disk = shutil.disk_usage("/")
+            disk_free = disk.free // (1024 ** 3)
+            disk_total = disk.total // (1024 ** 3)
+            disk_str = f"{disk_free}GB/{disk_total}GB free"
+        except Exception:
+            disk_str = "?"
+        try:
+            redis_ping = db.ping()
+            redis_str = "🟢 Connected" if redis_ping else "🔴 Offline"
+        except Exception:
+            redis_str = "🔴 Offline"
+
         text = (
             "┏━━━━━━━━━━━━━━━━━⍟\n"
             "┃  ⚡ **𝐒𝐘𝐒𝐓𝐄𝐌 𝐎𝐍𝐋𝐈𝐍𝐄**\n"
             "┗━━━━━━━━━━━━━━━━━━━━━⍟\n\n"
             f"🆔 **Build:** `{sha}` (#{boots})\n"
             f"🕒 **Started:** `{started}`\n"
-            f"📦 **Packs:** `{packs}/12 loaded`\n"
+            f"🐍 **Python:** `{py_ver}` | **Telethon:** `{tl_ver}`\n\n"
+            f"👥 **Users:** `{total_users}` | ⭐ **Premium:** `{premium_users}` | 🛡️ **Admins:** `{admin_count}`\n"
             f"💾 **Storage:** `{PRIVATE_CHAT_ID}`\n"
+            f"📦 **Packs:** `{packs}/12 loaded`\n"
             f"🛠 **Maintenance:** `{maint}`\n\n"
+            f"🗄️ **Redis:** {redis_str}\n"
+            f"💿 **Disk:** `{disk_str}`\n\n"
             "┏━━━━━━━━━━━━━━━━━⍟\n"
             "┃  🛡️ All systems operational\n"
             "┗━━━━━━━━━━━━━━━━━━━━━⍟"
         )
         await bot.send_message(
             int(raw), text, parse_mode="markdown",
-            buttons=[[Button.inline("⚙️ Open Admin Panel", data="menu_admin")]],
+            buttons=[
+                [Button.inline("⚙️ Admin Panel", data="menu_admin"),
+                 Button.inline("📊 Stats", data="menu_mystats")],
+                [Button.inline("📋 My Info", data="menu_info")],
+            ],
         )
     except Exception as e:
         log.info(f"boot notify failed: {e}")
