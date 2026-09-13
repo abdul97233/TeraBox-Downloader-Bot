@@ -4599,15 +4599,17 @@ async def _boot_notify():
         packs = len(_loaded_packs) if "_loaded_packs" in globals() else 0
         started = time.strftime("%d %b %Y, %I:%M %p")
         text = (
-            "┏━━━━━━━━━━⍟\n"
-            "┃ 𝐍𝐓𝐌 𝐓𝐞𝐫𝐚 𝐁𝐨𝐱 𝐃𝐨𝐰𝐧𝐥𝐨𝐚𝐝𝐞𝐫 𝐁𝐨𝐭\n"
-            "┗━━━━━━━━━━━━━━━━━⍟\n"
-            "✅ **System Online**\n\n"
-            f"🆔 Build: `{sha}` (#{boots})\n"
-            f"🕒 Started: `{started}`\n"
-            f"📦 Packs: `{packs}/12 loaded`\n"
-            f"💾 Storage: `{PRIVATE_CHAT_ID}`\n"
-            f"🛠 Maintenance: `{maint}`"
+            "┏━━━━━━━━━━━━━━━━━⍟\n"
+            "┃  ⚡ **𝐒𝐘𝐒𝐓𝐄𝐌 𝐎𝐍𝐋𝐈𝐍𝐄**\n"
+            "┗━━━━━━━━━━━━━━━━━━━━━⍟\n\n"
+            f"🆔 **Build:** `{sha}` (#{boots})\n"
+            f"🕒 **Started:** `{started}`\n"
+            f"📦 **Packs:** `{packs}/12 loaded`\n"
+            f"💾 **Storage:** `{PRIVATE_CHAT_ID}`\n"
+            f"🛠 **Maintenance:** `{maint}`\n\n"
+            "┏━━━━━━━━━━━━━━━━━⍟\n"
+            "┃  🛡️ All systems operational\n"
+            "┗━━━━━━━━━━━━━━━━━━━━━⍟"
         )
         await bot.send_message(
             int(raw), text, parse_mode="markdown",
