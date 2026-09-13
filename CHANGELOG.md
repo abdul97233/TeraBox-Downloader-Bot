@@ -52,6 +52,14 @@ All notable changes to the TeraBox Downloader Bot.
 - **`/refstats`** — referral statistics
 - **Audit log** — tracks all admin actions
 
+### Referral System (v2)
+- **New link format** — `ref_NTM-{tg_id}` (simple, readable, uses Telegram ID)
+- **Count on join** — referral credited immediately when someone joins via link (not on first download)
+- **Modern UI** — progress bars, tier visualization, share/claim/stats buttons
+- **Self-redeem** — "Claim Reward" button to manually claim tier rewards
+- **Cumulative tiers** — 5→1d, 10→3d, 25→7d (one-time at each threshold)
+- **Self-ref protection** — cannot refer yourself, each user attributed once
+
 ### Safety & Reliability
 - **FloodWait protection** — global edit backoff, patient_forward, patient_reply, patient_send
 - **API log redaction** — URLs/tokens stripped from logs (`utils/logx.py`)

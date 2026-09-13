@@ -298,19 +298,6 @@ def _record_dl(uid, size, link, ok=True):
             db.hincrby(f"user_stats_{uid}", "total", 1)
     except Exception:
         pass
-    if ok:
-        try:
-            from commands.referral import credit_activation
-            total = int(db.hget(f"user_stats_{uid}", "total") or 0)
-            if total == 1:
-                rewarded, _ref, _n, _days = credit_activation(db, uid, grant_premium)
-                if rewarded:
-                    try:
-                        log.info(f"Referral reward: {_ref} +{_days}d (total {_n})")
-                    except Exception:
-                        pass
-        except Exception:
-            pass
 
 # Define /info and /id commands to display user information
 @bot.on(
@@ -1074,18 +1061,21 @@ async def start(m: UpdateNewMessage):
     user = await bot.get_entity(user_id)
     name = user.first_name
 
-    # Referral capture: /start ref_CODE (deep link). No self-refs, one attributer.
+    # Referral capture: /start ref_NTM-{tg_id} (deep link). No self-refs, one-time.
     try:
-        from commands.referral import parse_start_referral
+        from commands.referral import parse_start_referral, record_referral, _resolve_code, check_and_grant_reward
         _ref_code = parse_start_referral(m.text)
         if _ref_code:
-            try:
-                _referrer = db.hget("ref:code_by_code", _ref_code)
-            except Exception:
-                _referrer = None
+            _referrer = _resolve_code(db, _ref_code)
             if _referrer:
-                from commands.referral import record_referral_start
-                record_referral_start(db, _referrer, user_id)
+                _new = record_referral(db, _referrer, user_id)
+                if _new:
+                    try:
+                        _granted, _days = check_and_grant_reward(db, _referrer, grant_premium)
+                        if _granted:
+                            log.info(f"Referral reward: {_referrer} +{_days}d")
+                    except Exception:
+                        pass
     except Exception:
         pass
 

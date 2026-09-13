@@ -71,7 +71,7 @@ Forwards to you instantly
 - Download history — `/history`
 - My Stats — `/mystats` (personal download stats)
 - My Status — `/mystatus` (premium, tag, member-since, download counts)
-- Referral system — `/referral` (tiered rewards: 5 → 1d, 10 → 3d, 25 → 7d)
+- Referral system — `/referral` (link: `ref_NTM-{tg_id}`, tiered rewards: 5 → 1d, 10 → 3d, 25 → 7d)
 - Quick download — `/quick <link>` (skip folder detection)
 - Preview — `/preview <link>` (peek first 3 files in a folder)
 - Cancel — `/cancel` with tap-to-cancel buttons on progress messages

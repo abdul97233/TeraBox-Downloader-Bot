@@ -1,16 +1,16 @@
-"""Referral system (deep links) + premium expiry reminders.
+"""Referral system — NTM-style deep links + modern UI + self-redeem.
 
-Redis namespace `ref:*`. No main.py imports — everything via ctx.
+Link format: https://t.me/BOT?start=ref_NTM-{tg_id}
+Redis namespace: ref:*
 """
 
 import asyncio
-import secrets as _secrets
 import time as _time
 
 from telethon import Button, events
 
-# Successful referrals -> reward days Premium (cumulative thresholds).
-TIERS = {5: 1, 10: 3, 25: 7}
+# Tier thresholds: successful referrals -> reward days.
+TIERS = [(5, 1), (10, 3), (25, 7)]
 
 REMINDERS = (
     (3 * 86400, "reminder_3d", "3 days"),
@@ -18,33 +18,25 @@ REMINDERS = (
 )
 
 
-def get_or_create_code(db, user_id):
-    """Stable unique code per user."""
+def _code_for(user_id):
+    """ref_NTM-{tg_id} — simple, unique, human-readable."""
+    return f"ref_NTM-{int(user_id)}"
+
+
+def _resolve_code(db, code):
+    """Parse ref_NTM-{tg_id} -> user_id (int) or None."""
     try:
-        code = db.hget("ref:code", str(user_id))
-    except Exception:
-        code = None
-    if code:
-        return code
-    for _ in range(5):
-        code = f"REF-{int(user_id) % 100000:05d}-{_secrets.token_hex(2).upper()}"
-        try:
-            if db.hsetnx("ref:code_by_code", code, str(user_id)):
-                break
-        except Exception:
-            break
-    else:
-        code = f"REF-{int(user_id)}"
-    try:
-        db.hset("ref:code", str(user_id), code)
-        db.hset("ref:code_by_code", code, str(user_id))
+        if code.startswith("ref_NTM-"):
+            uid = int(code.split("ref_NTM-", 1)[1])
+            if uid > 0:
+                return uid
     except Exception:
         pass
-    return code
+    return None
 
 
-def record_referral_start(db, referrer_id, new_user_id):
-    """Attribute a /start to a referrer. Returns True if recorded."""
+def record_referral(db, referrer_id, new_user_id):
+    """Record a referral on /start. Returns True if new attribution."""
     try:
         referrer_id, new_user_id = int(referrer_id), int(new_user_id)
     except Exception:
@@ -56,54 +48,86 @@ def record_referral_start(db, referrer_id, new_user_id):
             return False
         db.set(f"ref:by:{new_user_id}", referrer_id)
         db.sadd(f"ref:invited:{referrer_id}", new_user_id)
+        db.hincrby("ref:ok", str(referrer_id), 1)
         return True
     except Exception:
         return False
 
 
-def credit_activation(db, new_user_id, grant_premium_fn):
-    """Called once on a referred user's first successful download.
+def get_stats(db, user_id):
+    """Return (invited, successful, next_tier, days_to_next)."""
+    try:
+        invited = db.scard(f"ref:invited:{user_id}") or 0
+    except Exception:
+        invited = 0
+    try:
+        ok = int(db.hget("ref:ok", str(user_id)) or 0)
+    except Exception:
+        ok = 0
+    for threshold, days in TIERS:
+        if ok < threshold:
+            return invited, ok, threshold, days
+    return invited, ok, None, None
 
-    Returns (rewarded: bool, referrer_id, total, days).
-    """
+
+def get_reward_for(count):
+    """Return total reward days for a given successful count (cumulative)."""
+    total = 0
+    for threshold, days in TIERS:
+        if count >= threshold:
+            total = days
+    return total
+
+
+def check_and_grant_reward(db, user_id, grant_premium_fn):
+    """Check if user hit a new tier and grant. Returns (granted, days)."""
     try:
-        new_user_id = int(new_user_id)
+        ok = int(db.hget("ref:ok", str(user_id)) or 0)
     except Exception:
-        return False, None, 0, 0
-    try:
-        if not db.set(f"ref:activated:{new_user_id}", "1", nx=True):
-            return False, None, 0, 0
-    except Exception:
-        return False, None, 0, 0
-    try:
-        referrer = db.get(f"ref:by:{new_user_id}")
-    except Exception:
-        referrer = None
-    if not referrer:
-        return False, None, 0, 0
-    try:
-        total = int(db.hincrby("ref:ok", str(referrer), 1))
-    except Exception:
-        return False, referrer, 0, 0
-    days = TIERS.get(total, 0)
-    if days:
-        try:
-            grant_premium_fn(int(referrer), days)
-        except Exception:
-            return False, referrer, total, 0
-        return True, referrer, total, days
-    return False, referrer, total, 0
+        return False, 0
+    last = int(db.hget("ref:last_reward", str(user_id)) or 0)
+    for threshold, days in TIERS:
+        if ok >= threshold and threshold > last:
+            try:
+                grant_premium_fn(int(user_id), days)
+                db.hset("ref:last_reward", str(user_id), threshold)
+                return True, days
+            except Exception:
+                return False, 0
+    return False, 0
 
 
 def parse_start_referral(text):
-    """Extract referrer user id from '/start ref_CODE'. Returns code or None."""
+    """Extract ref code from '/start ref_NTM-xxx'. Returns code or None."""
     try:
         parts = str(text or "").split()
         if len(parts) >= 2 and parts[1].startswith("ref_"):
-            return parts[1][len("ref_"):]
+            return parts[1]
     except Exception:
         pass
     return None
+
+
+def _progress_bar(current, target, length=8):
+    """Visual progress bar: ████░░░░."""
+    filled = min(current, target)
+    ratio = filled / target if target else 0
+    bar_len = int(ratio * length)
+    return "█" * bar_len + "░" * (length - bar_len)
+
+
+def _tier_text(ok):
+    """Build tier status with progress bars."""
+    lines = []
+    for i, (threshold, days) in enumerate(TIERS):
+        prev = TIERS[i - 1][0] if i > 0 else 0
+        segment = threshold - prev
+        in_segment = max(0, min(ok, threshold) - prev)
+        bar = _progress_bar(in_segment, segment, 8)
+        check = "✅" if ok >= threshold else "⬜"
+        label = f"{threshold} referrals"
+        lines.append(f"{check} `{bar}` {label} → {days}d Premium")
+    return "\n".join(lines)
 
 
 async def referral_sweep_once(bot, db):
@@ -184,53 +208,116 @@ def register(bot, ctx):
 
     @bot.on(events.NewMessage(pattern=r"^/referral$", incoming=True, outgoing=False))
     async def _referral(m):
-        code = get_or_create_code(db, m.sender_id)
+        user_id = m.sender_id
+        code = _code_for(user_id)
         try:
             me = await bot.get_me()
             username = me.username or "YourBot"
         except Exception:
             username = "YourBot"
-        try:
-            invited = db.scard(f"ref:invited:{m.sender_id}")
-        except Exception:
-            invited = 0
-        try:
-            ok = int((db.hget("ref:ok", str(m.sender_id)) or 0))
-        except Exception:
-            ok = 0
-        await m.reply(
-            "👥 Your Referral System\n\n"
-            "Your referral link:\n\n"
-            f"https://t.me/{username}?start=ref_{code}\n\n"
-            f"Invited users: {invited}\n"
-            f"Successful referrals: {ok}\n"
-            "Rewards earned: 5 referrals → 1 day Premium\n"
-            "10 → 3 days, 25 → 7 days"
+
+        invited, ok, next_tier, days_to_next = get_stats(db, user_id)
+        link = f"https://t.me/{username}?start={code}"
+
+        if next_tier:
+            need = next_tier - ok
+            tier_text = f"Next tier: **{need} more** referral(s) → {days_to_next}d Premium"
+        else:
+            tier_text = "🏆 **All tiers unlocked!**"
+
+        text = (
+            "┏━━━━━━━━━━━━━━━━━⍟\n"
+            "┃  👥 𝗥𝗲𝗳𝗲𝗿𝗿𝗮𝗹 𝗦𝘆𝘀𝘁𝗲𝗺\n"
+            "┗━━━━━━━━━━━━━━━━━━━━━⍟\n\n"
+            f"📎 Your referral link:\n`{link}`\n\n"
+            f"👥 Invited: **{invited}**\n"
+            f"✅ Successful: **{ok}**\n\n"
+            f"{_tier_text(ok)}\n\n"
+            f"{tier_text}\n\n"
+            "💡 Share your link — when someone joins, you earn points!\n"
+            "🎁 Hit a tier to unlock Premium rewards."
         )
 
-    @bot.on(events.NewMessage(pattern=r"^/refstats$", incoming=True, outgoing=False,
-                              func=lambda m: ctx["is_admin"](m.sender_id)))
-    async def _refstats(m):
+        # Check if there's a reward to claim
+        granted, days = check_and_grant_reward(db, user_id, grant_premium)
+        if granted:
+            text += f"\n\n🎉 **Congratulations!** You just earned **{days} days Premium!**"
+
+        buttons = [
+            [Button.url("📤 Share Link", f"https://t.me/share/url?url={link}")],
+            [Button.inline("🏆 Claim Reward", data="ref_claim")],
+            [Button.inline("📊 Full Stats", data="ref_fullstats")],
+            [Button.inline("◀️ Back", data="menu_main")],
+        ]
+        await m.reply(text, parse_mode="markdown", buttons=buttons)
+
+    @bot.on(events.CallbackQuery(data=b"ref_claim"))
+    async def _ref_claim(e):
+        granted, days = check_and_grant_reward(db, e.sender_id, grant_premium)
+        if granted:
+            text = f"🎉 **Reward Claimed!**\n\nYou received **{days} days Premium!**\n\nEnjoy your benefits!"
+        else:
+            invited, ok, next_tier, days_to_next = get_stats(db, e.sender_id)
+            if next_tier:
+                need = next_tier - ok
+                text = f"⏳ No reward to claim yet.\n\nYou need **{need} more** referral(s) to reach the next tier ({days_to_next}d Premium)."
+            else:
+                text = "🏆 You've already claimed all available rewards!"
+        await e.answer(text[:200], alert=True)
+
+    @bot.on(events.CallbackQuery(data=b"ref_fullstats"))
+    async def _ref_fullstats(e):
+        invited, ok, next_tier, days_to_next = get_stats(db, e.sender_id)
+        last = int(db.hget("ref:last_reward", str(e.sender_id)) or 0)
+        earned = get_reward_for(ok)
+
+        text = (
+            "┏━━━━━━━━━━━━━━━━━⍟\n"
+            "┃  📊 𝗥𝗲𝗳𝗲𝗿𝗿𝗮𝗹 𝗦𝘁𝗮𝘁𝘀\n"
+            "┗━━━━━━━━━━━━━━━━━━━━━⍟\n\n"
+            f"👥 Total invited: **{invited}**\n"
+            f"✅ Successful: **{ok}**\n"
+            f"🎁 Rewards earned: **{earned} days** Premium\n"
+            f"📌 Last tier claimed: **{last}** referrals\n\n"
+            f"{_tier_text(ok)}"
+        )
+        buttons = [[Button.inline("◀️ Back", data="menu_referral")]]
+        await e.edit(text, parse_mode="markdown", buttons=buttons)
+
+    @bot.on(events.CallbackQuery(data=b"menu_referral"))
+    async def cb_referral_menu(e):
+        user_id = e.sender_id
+        code = _code_for(user_id)
         try:
-            codes = db.hlen("ref:code")
+            me = await bot.get_me()
+            username = me.username or "YourBot"
         except Exception:
-            codes = 0
-        try:
-            ok_map = db.hgetall("ref:ok") or {}
-            activated = sum(int(v or 0) for v in ok_map.values())
-        except Exception:
-            activated = 0
-        top = []
-        try:
-            for uid, n in (ok_map or {}).items():
-                top.append((uid, int(n or 0)))
-            top.sort(key=lambda x: x[1], reverse=True)
-        except Exception:
-            top = []
-        lines = [f"Codes issued: {codes}", f"Activated referrals: {activated}", ""]
-        for uid, n in top[:5]:
-            lines.append(f"`{uid}` — {n}")
-        await m.reply("**Referral Stats**\n\n" + "\n".join(lines), parse_mode="markdown")
+            username = "YourBot"
+
+        invited, ok, next_tier, days_to_next = get_stats(db, user_id)
+        link = f"https://t.me/{username}?start={code}"
+
+        if next_tier:
+            need = next_tier - ok
+            tier_text = f"Next: **{need} more** → {days_to_next}d Premium"
+        else:
+            tier_text = "🏆 **All tiers unlocked!**"
+
+        text = (
+            "┏━━━━━━━━━━━━━━━━━⍟\n"
+            "┃  👥 𝗥𝗲𝗳𝗲𝗿𝗿𝗮𝗹𝘀\n"
+            "┗━━━━━━━━━━━━━━━━━━━━━⍟\n\n"
+            f"`{link}`\n\n"
+            f"👥 Invited: **{invited}** | ✅ Successful: **{ok}**\n\n"
+            f"{_tier_text(ok)}\n\n"
+            f"{tier_text}"
+        )
+        buttons = [
+            [Button.url("📤 Share", f"https://t.me/share/url?url={link}")],
+            [Button.inline("🏆 Claim", data="ref_claim")],
+            [Button.inline("◀️ Back", data="menu_main")],
+        ]
+        await e.edit(text, parse_mode="markdown", buttons=buttons)
 
     @bot.on(events.CallbackQuery(data=b"renew_info"))
     async def _renew_info(e):
