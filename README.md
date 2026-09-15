@@ -8,7 +8,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/tera_NTM_bot)
-[![License](https://img.shields.io/badge/License-GPL%20v3-green?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/License-AGPL%20v3-blue?style=flat-square)](LICENSE)
 [![Redis](https://img.shields.io/badge/Redis-7.0+-DC382D?style=flat-square&logo=redis&logoColor=white)](https://redis.io)
 
 <br>
@@ -428,7 +428,7 @@ TeraBox-Downloader-Bot/
 
 ## License
 
-[GPL-3.0](LICENSE) — Free to use, modify, and distribute.
+[AGPL-3.0](LICENSE) — Free to use, modify, and distribute. Network use counts as distribution.
 
 ---
 
