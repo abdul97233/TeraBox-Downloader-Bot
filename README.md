@@ -43,7 +43,7 @@ Forwards to you instantly
 - Send any TeraBox link → instant download
 - **67 video extensions** supported (mp4, mkv, webm, mov, avi, flv, wmv, m4v, 3gp, ts, ogg, mxf, yuv, etc.)
 - **45 photo extensions** supported (jpg, png, gif, webp, heic, raw, psd, exr, jxl, tga, pcx, etc.)
-- **50+ supported domains** (terabox.com, 1024terabox.com, dubox, mirrobox, etc.)
+- **47 supported domains** (terabox.com, 1024terabox.com, dubox, mirrobox, teraboxapp.com, etc.)
 - Quality selector — `/dl 720p <link>` or `/dl 1080p <link>`
 - Folder download — `/folder <link>` (premium)
 - Batch multi-file download
