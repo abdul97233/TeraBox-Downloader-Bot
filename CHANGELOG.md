@@ -4,6 +4,27 @@ All notable changes to the TeraBox Downloader Bot.
 
 ---
 
+## v3.1 — Extended Format Support (2026-09-15)
+
+### Format Expansion
+- **67 video extensions** — added `.ogg`, `.mxf`, `.yuv`, `.viv`, `.m4p` (broadcast/pro formats)
+- **45 photo extensions** — added `.dib`, `.rle`, `.jxl`, `.jxr`, `.tga`, `.pcx`, `.exr`, `.psd`, `.xcf`, `.pnm`, `.ppm`, `.pgm`, `.pbm`, `.ktx`, `.pef`, `.mrw`, `.srf`, `.sr2`, `.dcr`, `.erf`
+- **112 total formats** — up from 90 (24% increase)
+- JPEG XL (`.jxl`) — modern high-efficiency format
+- OpenEXR (`.exr`) — film/VFX industry standard
+- Camera RAW — Pentax, Minolta, Sony, Kodak, Epson variants
+- OpenGL textures (`.ktx`) — game development support
+
+### Boot Notification Cleanup
+- **Removed stats line** — Users/Premium/Admins/Storage no longer shown in online status
+- Cleaner, less noisy startup message
+
+### README Updates
+- **Domain count fixed** — accurate 47 supported TeraBox domains (was "50+")
+- **Extension counts updated** — 67 video, 45 photo
+
+---
+
 ## v3.0 — Modular Rewrite (2026-09-12)
 
 ### Architecture
