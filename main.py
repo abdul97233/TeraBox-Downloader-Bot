@@ -4537,20 +4537,6 @@ async def _boot_notify():
         packs = len(_loaded_packs) if "_loaded_packs" in globals() else 0
         started = time.strftime("%d %b %Y, %I:%M %p")
 
-        # Stats
-        try:
-            all_users = [k for k in db.scan_iter("user_stats_*")]
-            total_users = len(all_users)
-        except Exception:
-            total_users = "?"
-        try:
-            premium_users = db.hlen("premium_expiry") or 0
-        except Exception:
-            premium_users = "?"
-        try:
-            admin_count = len(get_all_admins())
-        except Exception:
-            admin_count = "?"
         try:
             import sys as _sys
             py_ver = f"{_sys.version_info.major}.{_sys.version_info.minor}.{_sys.version_info.micro}"
@@ -4582,8 +4568,6 @@ async def _boot_notify():
             f"🆔 **Build:** `{sha}` (#{boots})\n"
             f"🕒 **Started:** `{started}`\n"
             f"🐍 **Python:** `{py_ver}` | **Telethon:** `{tl_ver}`\n\n"
-            f"👥 **Users:** `{total_users}` | ⭐ **Premium:** `{premium_users}` | 🛡️ **Admins:** `{admin_count}`\n"
-            f"💾 **Storage:** `{PRIVATE_CHAT_ID}`\n"
             f"📦 **Packs:** `{packs}/12 loaded`\n"
             f"🛠 **Maintenance:** `{maint}`\n\n"
             f"🗄️ **Redis:** {redis_str}\n"
