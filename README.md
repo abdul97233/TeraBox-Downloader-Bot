@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="https://socialify.git.ci/abdul97233/TeraBox-Downloader-Bot/image?description=1&descriptionEditable=Download%20TeraBox%20videos%20instantly%20via%20Telegram%20Bot&font=Bitter&forks=1&issues=1&language=1&name=1&owner=1&pattern=Overlapping%20Hexagons&pulls=1&stargazers=1&theme=Dark" alt="TeraBox Downloader Bot" width="640" />
+<img src="https://socialify.git.ci/abdul97233/TeraBox-Downloader-Bot/image?description=1&descriptionEditable=Download%20TeraBox%20videos%20and%20photos%20instantly%20via%20Telegram%20Bot&font=Bitter&forks=1&issues=1&language=1&name=1&owner=1&pattern=Overlapping%20Hexagons&pulls=1&stargazers=1&theme=Dark" alt="TeraBox Downloader Bot" width="640" />
 
 # TeraBox Downloader Bot
 
-**Download TeraBox videos instantly through Telegram — fast, free, and feature-packed.**
+**Download TeraBox videos and photos instantly through Telegram — fast, free, and feature-packed.**
 
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/tera_NTM_bot)
@@ -26,7 +26,7 @@ You send a TeraBox link
         ↓
 Bot fetches file info (with fallback API)
         ↓
-Downloads + adds watermark
+Downloads + adds watermark (videos only)
         ↓
 Uploads to Telegram (2GB fast upload)
         ↓
@@ -42,6 +42,7 @@ Forwards to you instantly
 ### Download
 - Send any TeraBox link → instant download
 - **57 video extensions** supported (mp4, mkv, webm, mov, avi, flv, wmv, m4v, 3gp, ts, etc.)
+- **28 photo extensions** supported (jpg, png, gif, webp, heic, raw, etc.)
 - **50+ supported domains** (terabox.com, 1024terabox.com, dubox, mirrobox, etc.)
 - Quality selector — `/dl 720p <link>` or `/dl 1080p <link>`
 - Folder download — `/folder <link>` (premium)
@@ -63,7 +64,7 @@ Forwards to you instantly
 - `/mp3` — Extract audio with bitrate selector (128/192/256/320 kbps)
 - `/compress` — Compress video with resolution selector (480p/720p/1080p, no upscaling)
 - Video watermark — `@TERA_NTM_BOT` on every video (mp4 only, veryfast preset)
-- Video metadata — duration, resolution, thumbnail
+- Photos sent as native Telegram images (no watermark, no compression)
 
 ### User Experience
 - **Modern button-based UI** — no need to memorize commands
@@ -71,7 +72,7 @@ Forwards to you instantly
 - Download history — `/history`
 - My Stats — `/mystats` (personal download stats)
 - My Status — `/mystatus` (premium, tag, member-since, download counts)
-- Referral system — `/referral` (link: `ref_NTM-{tg_id}`, tiered rewards: 5 → 1d, 10 → 3d, 25 → 7d)
+- Referral system — `/ref` (link: `ref_NTM-{tg_id}`, tiered rewards: 5 → 1d, 10 → 3d, 25 → 7d)
 - Quick download — `/quick <link>` (skip folder detection)
 - Preview — `/preview <link>` (peek first 3 files in a folder)
 - Cancel — `/cancel` with tap-to-cancel buttons on progress messages
@@ -154,7 +155,7 @@ Forwards to you instantly
 | `/setthumb` | Set custom thumbnail (reply to image) |
 | `/removethumb` | Remove custom thumbnail |
 | `/lang ne` | Set language (en/ne/hi) |
-| `/ref` | Get your referral link + stats |
+| `/ref` `/refer` `/referral` | Get your referral link + stats |
 | `/search <query>` | Search file library |
 | `/redeem <code>` | Redeem a gift card |
 
@@ -382,6 +383,7 @@ TeraBox-Downloader-Bot/
 | Bot Framework | Telethon 1.42 (MTProto) |
 | Bot API Upload | aiohttp + self-hosted Bot API (2GB) |
 | Download | aiohttp (async, 3 retries) |
+| Photo Support | sendPhoto (native Telegram images) |
 | Database | Redis (cloud) |
 | Video Processing | ffmpeg (watermark, compress, extract) |
 | Watermark | ffmpeg drawtext (veryfast preset) |
