@@ -14,6 +14,7 @@ from tools import get_formatted_size
 
 def check_url_patterns(url):
     patterns = [
+        # Primary
         r"terabox\.com",
         r"terabox\.app",
         r"terabox\.fun",
@@ -21,6 +22,10 @@ def check_url_patterns(url):
         r"terabox\.ap",
         r"terabox\.club",
         r"terabox\.click",
+        r"terabox\.me",
+        r"terabox\.site",
+        r"terabox\.pro",
+        r"terabox\.xyz",
         r"teraboxapp\.com",
         r"teraboxlink\.com",
         r"teraboxlinke\.com",
@@ -28,18 +33,25 @@ def check_url_patterns(url):
         r"teraboxsharefile\.com",
         r"teraboxurl\.com",
         r"teraboxfree\.com",
+        r"teraboxmod\.app",
+        # Share domains
         r"terasharelink\.com",
         r"terasharefile\.com",
         r"terashareus\.com",
         r"terafileshare\.com",
+        r"terasharedrive\.com",
+        # 1024 variants
         r"tera1024box\.com",
         r"1024tera\.com",
         r"1024tera\.co",
         r"1024terabox\.com",
         r"1024-terabox\.com",
+        r"1024box\.com",
+        # 4fun variants
         r"4funbox\.com",
         r"4funbox\.co",
         r"4funbox\.in",
+        # Mirror / legacy
         r"mirrobox\.com",
         r"nephobox\.com",
         r"freeterabox\.com",
@@ -48,10 +60,12 @@ def check_url_patterns(url):
         r"gibibox\.com",
         r"pebibox\.com",
         r"fancybox\.in",
-        r"bestclouddrive\.com",
         r"dubox\.com",
+        r"bestclouddrive\.com",
         r"playduo\.link",
         r"theteraboxmod\.app",
+        r"teraboxdownloader\.com",
+        r"teradownloader\.com",
     ]
 
     for pattern in patterns:
