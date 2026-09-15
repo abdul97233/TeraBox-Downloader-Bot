@@ -41,6 +41,19 @@ VIDEO_EXTENSIONS = (
     ".tp", ".trp", ".ps", ".pva",
 )
 
+PHOTO_EXTENSIONS = (
+    # Standard
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp",
+    # High quality / RAW
+    ".tiff", ".tif", ".svg", ".ico", ".heic", ".heif", ".avif",
+    # RAW camera
+    ".raw", ".cr2", ".cr3", ".nef", ".arw", ".dng", ".orf", ".rw2",
+    # Other
+    ".jpe", ".jfif", ".pjpeg", ".pjp",
+)
+
+SUPPORTED_EXTENSIONS = VIDEO_EXTENSIONS + PHOTO_EXTENSIONS
+
 WATERMARK_TEXT = "@TERA_NTM_BOT"
 
 
@@ -268,8 +281,17 @@ def _bot_api_send(base_url, token, chat_id, file_path, caption, filename, progre
     """
     ext = os.path.splitext(filename)[1].lower()
     is_video = ext in VIDEO_EXTENSIONS
+    is_photo = ext in PHOTO_EXTENSIONS
 
-    if is_video:
+    if is_photo:
+        endpoint = "sendPhoto"
+        file_field = "photo"
+        data = {
+            "chat_id": chat_id,
+            "caption": caption,
+            "parse_mode": "Markdown",
+        }
+    elif is_video:
         endpoint = "sendVideo"
         file_field = "video"
         data = {

@@ -38,6 +38,8 @@ from tools import (
     is_user_on_chat,
     send_document_via_api,
     VIDEO_EXTENSIONS,
+    PHOTO_EXTENSIONS,
+    SUPPORTED_EXTENSIONS,
 )
 
 bot = TelegramClient("tele", API_ID, API_HASH)
@@ -2314,8 +2316,8 @@ async def handle_message(m: Message):
 
         fname_lower = data["file_name"].lower()
         file_ext = "." + fname_lower.rsplit(".", 1)[-1] if "." in fname_lower else ""
-        if file_ext not in VIDEO_EXTENSIONS:
-            supported = ", ".join(VIDEO_EXTENSIONS)
+        if file_ext not in SUPPORTED_EXTENSIONS:
+            supported = ", ".join(sorted(set(VIDEO_EXTENSIONS | PHOTO_EXTENSIONS)))
             return await hm.edit(
                 f"Sorry! File type `{file_ext}` is not supported.\nSupported: {supported}"
             )
@@ -2628,7 +2630,7 @@ async def handle_message(m: Message):
             async with download_semaphore:
                 fname_lower = data["file_name"].lower()
                 file_ext = "." + fname_lower.rsplit(".", 1)[-1] if "." in fname_lower else ""
-                if file_ext not in VIDEO_EXTENSIONS:
+                if file_ext not in SUPPORTED_EXTENSIONS:
                     done_count += 1
                     failed_count += 1
                     return
@@ -3685,7 +3687,7 @@ async def folder_download(m: UpdateNewMessage):
         async with download_semaphore:
             fname_lower = data["file_name"].lower()
             file_ext = "." + fname_lower.rsplit(".", 1)[-1] if "." in fname_lower else ""
-            if file_ext not in VIDEO_EXTENSIONS:
+            if file_ext not in SUPPORTED_EXTENSIONS:
                 done_count += 1
                 failed_count += 1
                 await update_progress(f"⏭ Skipping `{data['file_name']}` (unsupported)")
