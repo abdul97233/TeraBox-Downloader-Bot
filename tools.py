@@ -35,10 +35,12 @@ VIDEO_EXTENSIONS = (
     # Samsung / Sony
     ".svi",
     # Ogg variants
-    ".ogm",
+    ".ogm", ".ogg",
     # Other
     ".amv", ".drc", ".dv", ".roq", ".nsv", ".xvid", ".mng", ".mxg",
     ".tp", ".trp", ".ps", ".pva",
+    # Professional / broadcast
+    ".mxf", ".yuv", ".viv", ".m4p",
 )
 
 PHOTO_EXTENSIONS = (
@@ -50,6 +52,18 @@ PHOTO_EXTENSIONS = (
     ".raw", ".cr2", ".cr3", ".nef", ".arw", ".dng", ".orf", ".rw2",
     # Other
     ".jpe", ".jfif", ".pjpeg", ".pjp",
+    # Bitmap variants
+    ".dib", ".rle",
+    # Modern formats
+    ".jxl", ".jxr",
+    # Professional / legacy
+    ".tga", ".pcx", ".exr", ".psd", ".xcf",
+    # Netpbm family
+    ".pnm", ".ppm", ".pgm", ".pbm",
+    # OpenGL textures
+    ".ktx",
+    # Additional camera RAW
+    ".pef", ".mrw", ".srf", ".sr2", ".dcr", ".erf",
 )
 
 SUPPORTED_EXTENSIONS = VIDEO_EXTENSIONS + PHOTO_EXTENSIONS
