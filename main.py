@@ -377,16 +377,12 @@ async def user_info(m: UpdateNewMessage):
 # For premium contact @abdul97233
 # """
 #     await m.reply(help_text)
-@bot.on(
-    events.NewMessage(
-        pattern="/cmds|/help",
-        incoming=True,
-        outgoing=False,
-    )
-)
-async def command_help(m: UpdateNewMessage):
-    text = WELCOME_TEXT.format(name=m.sender.first_name)
-    buttons = [
+
+
+def _main_menu_buttons(uid):
+    """Build the main menu button layout (emoji-rich, grouped)."""
+    is_adm = uid in ADMINS if isinstance(ADMINS, list) else uid == ADMINS
+    rows = [
         [
             Button.inline("📥 How to Use", data="menu_howto"),
             Button.inline("📋 My Info", data="menu_info"),
@@ -395,6 +391,10 @@ async def command_help(m: UpdateNewMessage):
             Button.inline("⭐ Premium", data="menu_premium"),
             Button.inline("🎁 Redeem Card", data="menu_redeem"),
         ],
+    ]
+    if is_adm:
+        rows.append([Button.inline("⚙️ Admin Panel", data="menu_admin")])
+    rows += [
         [
             Button.inline("🛠 Tools", data="menu_tools"),
             Button.inline("🌐 Language", data="menu_lang"),
@@ -404,13 +404,22 @@ async def command_help(m: UpdateNewMessage):
             Button.inline("📊 My Stats", data="menu_mystats"),
         ],
         [
-            Button.url("📢 Channel", url="https://t.me/NTMpro"),
-            Button.url("💬 Group", url="https://t.me/NTMchat"),
-            Button.url("💻 GitHub Repo", url="https://github.com/abdul97233/TeraBox-Downloader-Bot"),
+            Button.url("📣 Channel", url="https://t.me/NTMpro"),
+            Button.url("💬 Group", url="https://t.me/NTmchat"),
+            Button.url("💻 GitHub", url="https://github.com/abdul97233/TeraBox-Downloader-Bot"),
         ],
     ]
-    if is_admin(m.sender_id):
-        buttons.insert(2, [Button.inline("⚙️ Admin Panel", data="menu_admin")])
+    return rows
+@bot.on(
+    events.NewMessage(
+        pattern="/cmds|/help",
+        incoming=True,
+        outgoing=False,
+    )
+)
+async def command_help(m: UpdateNewMessage):
+    text = WELCOME_TEXT.format(name=m.sender.first_name)
+    buttons = _main_menu_buttons(m.sender_id)
 
     await m.reply(
         text,
@@ -1103,34 +1112,7 @@ async def start(m: UpdateNewMessage):
 
     text = WELCOME_TEXT.format(name=name)
 
-    buttons = [
-        [
-            Button.inline("📥 How to Use", data="menu_howto"),
-            Button.inline("📋 My Info", data="menu_info"),
-        ],
-        [
-            Button.inline("⭐ Premium", data="menu_premium"),
-            Button.inline("🎁 Redeem Card", data="menu_redeem"),
-        ],
-        [
-            Button.inline("🛠 Tools", data="menu_tools"),
-            Button.inline("🌐 Language", data="menu_lang"),
-        ],
-        [
-            Button.inline("👥 Referral", data="menu_referral"),
-            Button.inline("📊 My Stats", data="menu_mystats"),
-        ],
-        [
-            Button.url("📢 Channel", url="https://t.me/NTMpro"),
-            Button.url("💬 Group", url="https://t.me/NTMchat"),
-            Button.url("💻 GitHub Repo", url="https://github.com/abdul97233/TeraBox-Downloader-Bot"),
-        ],
-    ]
-
-    if user_id in ADMINS:
-        buttons.insert(2, [
-            Button.inline("⚙️ Admin Panel", data="menu_admin"),
-        ])
+    buttons = _main_menu_buttons(user_id)
 
     await m.reply(
         text,
@@ -1421,29 +1403,7 @@ async def cb_setlang(e):
     # Refresh main menu
     user = await bot.get_entity(e.sender_id)
     text = WELCOME_TEXT.format(name=user.first_name)
-    buttons = [
-        [
-            Button.inline("📥 How to Use", data="menu_howto"),
-            Button.inline("📋 My Info", data="menu_info"),
-        ],
-        [
-            Button.inline("⭐ Premium", data="menu_premium"),
-            Button.inline("🎁 Redeem Card", data="menu_redeem"),
-        ],
-        [
-            Button.inline("🛠 Tools", data="menu_tools"),
-            Button.inline("🌐 Language", data="menu_lang"),
-        ],
-        [
-            Button.inline("👥 Referral", data="menu_referral"),
-            Button.inline("📊 My Stats", data="menu_mystats"),
-        ],
-        [
-            Button.url("📢 Channel", url="https://t.me/NTMpro"),
-            Button.url("💬 Group", url="https://t.me/NTMchat"),
-            Button.url("💻 GitHub Repo", url="https://github.com/abdul97233/TeraBox-Downloader-Bot"),
-        ],
-    ]
+    buttons = _main_menu_buttons(e.sender_id)
     if is_admin(e.sender_id):
         buttons.insert(2, [Button.inline("⚙️ Admin Panel", data="menu_admin")])
     await e.edit(text, parse_mode="markdown", buttons=buttons)
@@ -1453,31 +1413,7 @@ async def cb_setlang(e):
 async def cb_main(e):
     user = await bot.get_entity(e.sender_id)
     text = WELCOME_TEXT.format(name=user.first_name)
-    buttons = [
-        [
-            Button.inline("📥 How to Use", data="menu_howto"),
-            Button.inline("📋 My Info", data="menu_info"),
-        ],
-        [
-            Button.inline("⭐ Premium", data="menu_premium"),
-            Button.inline("🎁 Redeem Card", data="menu_redeem"),
-        ],
-        [
-            Button.inline("🛠 Tools", data="menu_tools"),
-            Button.inline("🌐 Language", data="menu_lang"),
-        ],
-        [
-            Button.inline("👥 Referral", data="menu_referral"),
-            Button.inline("📊 My Stats", data="menu_mystats"),
-        ],
-        [
-            Button.url("📢 Channel", url="https://t.me/NTMpro"),
-            Button.url("💬 Group", url="https://t.me/NTMchat"),
-            Button.url("💻 GitHub Repo", url="https://github.com/abdul97233/TeraBox-Downloader-Bot"),
-        ],
-    ]
-    if is_admin(e.sender_id):
-        buttons.insert(2, [Button.inline("⚙️ Admin Panel", data="menu_admin")])
+    buttons = _main_menu_buttons(e.sender_id)
     await e.edit(text, parse_mode="markdown", buttons=buttons)
 
 

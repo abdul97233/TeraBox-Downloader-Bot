@@ -245,8 +245,10 @@ def register(bot, ctx):
 
         buttons = [
             [Button.url("📤 Share Link", f"https://t.me/share/url?url={link}")],
-            [Button.inline("🏆 Claim Reward", data="ref_claim")],
-            [Button.inline("📊 Full Stats", data="ref_fullstats")],
+            [
+                Button.inline("🏆 Claim Reward", data="ref_claim"),
+                Button.inline("📊 Full Stats", data="ref_fullstats"),
+            ],
             [Button.inline("◀️ Back", data="menu_main")],
         ]
         await m.reply(text, parse_mode="markdown", buttons=buttons)
@@ -314,7 +316,10 @@ def register(bot, ctx):
         )
         buttons = [
             [Button.url("📤 Share", f"https://t.me/share/url?url={link}")],
-            [Button.inline("🏆 Claim", data="ref_claim")],
+            [
+                Button.inline("🏆 Claim", data="ref_claim"),
+                Button.inline("📊 Stats", data="ref_fullstats"),
+            ],
             [Button.inline("◀️ Back", data="menu_main")],
         ]
         await e.edit(text, parse_mode="markdown", buttons=buttons)
