@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, urlparse
 
 import aiohttp
 
-from config import API_ENDPOINTS
+from config import TERABOX_API_TEMPLATE, TERABOX_FALLBACK_API_TEMPLATE
 from tools import get_formatted_size
 from utils.loadbalancer import build_balancer, get_balancer, APIEndpoint
 from utils.logx import api_log_started, api_log_ok, api_log_failed, safe_exc
@@ -96,6 +96,27 @@ def extract_surl_from_url(url: str) -> str | None:
 
 
 # ---------------- LOAD BALANCER INIT ---------------- #
+
+try:
+    from config import API_ENDPOINTS
+except ImportError:
+    # Build from legacy config templates
+    def _parse_legacy_template(tpl):
+        """Extract base URL and token from legacy template string."""
+        if "?" not in tpl:
+            return tpl, ""
+        base = tpl.split("?")[0]
+        token = ""
+        if "authkey=" in tpl:
+            token = tpl.split("authkey=")[1].split("&")[0]
+        return base, token
+
+    _p1, _t1 = _parse_legacy_template(TERABOX_API_TEMPLATE)
+    _p2, _t2 = _parse_legacy_template(TERABOX_FALLBACK_API_TEMPLATE)
+    API_ENDPOINTS = [
+        {"name": "primary", "url": _p1, "token": _t1},
+        {"name": "secondary", "url": _p2, "token": _t2},
+    ]
 
 _balancer = build_balancer(API_ENDPOINTS)
 

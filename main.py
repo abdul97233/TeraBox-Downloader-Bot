@@ -4270,8 +4270,23 @@ def _apply_api_templates(primary=None, fallback=None):
     # Rebuild load balancer with updated templates
     try:
         _tb._balancer = build_balancer(API_ENDPOINTS)
-    except Exception:
-        pass
+    except (NameError, Exception):
+        # API_ENDPOINTS not in config — rebuild from legacy templates
+        def _parse_legacy(tpl):
+            if "?" not in tpl:
+                return tpl, ""
+            base = tpl.split("?")[0]
+            token = ""
+            if "authkey=" in tpl:
+                token = tpl.split("authkey=")[1].split("&")[0]
+            return base, token
+        _p1, _t1 = _parse_legacy(_tb.TERABOX_API_TEMPLATE)
+        _p2, _t2 = _parse_legacy(_tb.TERABOX_FALLBACK_API_TEMPLATE)
+        eps = [
+            {"name": "primary", "url": _p1, "token": _t1},
+            {"name": "secondary", "url": _p2, "token": _t2},
+        ]
+        _tb._balancer = build_balancer(eps)
     return {"primary": _tb.TERABOX_API_TEMPLATE, "fallback": _tb.TERABOX_FALLBACK_API_TEMPLATE}
 
 
