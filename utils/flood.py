@@ -138,3 +138,25 @@ async def patient_forward(bot, max_wait=120, **kw):
             return True
         except Exception:
             return False
+
+
+async def patient_send_file(bot, entity, file, caption=None, max_wait=60, **kw):
+    """bot.send_file with one bounded retry. Returns True/False, never raises."""
+    try:
+        await bot.send_file(entity, file, caption=caption, **kw)
+        return True
+    except Exception as e:
+        if not _is_flood(e):
+            return False
+        note_flood(_secs(e))
+        try:
+            await _asyncio.sleep(min(_secs(e), int(max_wait)))
+        except Exception:
+            return False
+        try:
+            await bot.send_file(entity, file, caption=caption, **kw)
+            return True
+        except Exception as e2:
+            if _is_flood(e2):
+                note_flood(_secs(e2))
+            return False

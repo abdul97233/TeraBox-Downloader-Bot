@@ -1675,17 +1675,26 @@ async def cb_admin_broadcast(e):
     if not is_admin(e.sender_id):
         return await e.answer("Access denied!", alert=True)
 
-    text = """
-┏━━━━━━━━━━━━━━━━━⍟
-┃  📢 𝐁𝐫𝐨𝐚𝐝𝐜𝐚𝐬𝐭
-┗━━━━━━━━━━━━━━━━━━━━━⍟
-
-**Commands:**
-`/broadcast <message>` — Send now (owner)
-`/broadcast_legacy <message>` — Via channel (admin)
-`/announce <minutes> <msg>` — Schedule delay
-"""
-    buttons = [[Button.inline("◀️ Back", data="menu_admin")]]
+    text = (
+        "┏━━━━━━━━━━━━━━━━━⍟\n"
+        "┃  📢 **𝐁𝐫𝐨𝐚𝐝𝐜𝐚𝐬𝐭 𝐂𝐞𝐧𝐭𝐞𝐫**\n"
+        "┗━━━━━━━━━━━━━━━━━━━━━⍟\n\n"
+        "Choose broadcast type:\n\n"
+        "📝 **Text** — plain text message\n"
+        "📷 **Media** — photo or video + caption\n"
+        "🎭 **Sticker** — send a sticker\n"
+        "↩️ **Forward** — forward replied message as-is\n\n"
+        "Or use commands:\n"
+        "`/broadcast <message>` — quick text\n"
+        "Reply + `/broadcast` — forward message"
+    )
+    buttons = [
+        [Button.inline("📝 Text", data="bcast_text"),
+         Button.inline("📷 Media", data="bcast_media")],
+        [Button.inline("🎭 Sticker", data="bcast_sticker"),
+         Button.inline("↩️ Forward", data="bcast_forward")],
+        [Button.inline("◀️ Back", data="menu_admin")],
+    ]
     await e.edit(text, parse_mode="markdown", buttons=buttons)
 
 
@@ -2987,7 +2996,8 @@ async def update_bot(m: UpdateNewMessage):
                      "commands/analytics.py", "commands/maintenance.py",
                      "commands/ux.py", "commands/redeem_core.py",
                      "commands/config_editor.py", "commands/user_status.py",
-                     "utils/tags.py", "utils/premium.py", "utils/loadbalancer.py"],
+                     "commands/broadcast.py", "utils/tags.py", "utils/premium.py",
+                     "utils/loadbalancer.py"],
                     capture_output=True, text=True, cwd=cwd, timeout=30,
                 )
                 if check.returncode != 0:
@@ -4359,6 +4369,17 @@ try:
     _loaded_packs.append("ux")
 except Exception as e:
     log.warning(f"ux pack not loaded: {e}")
+
+try:
+    from commands.broadcast import register as _reg_broadcast
+    _reg_broadcast(bot, {
+        "db": db,
+        "OWNER_ID": OWNER_ID,
+        "get_all_users": lambda: db.smembers("all_known_users"),
+    })
+    _loaded_packs.append("broadcast")
+except Exception as e:
+    log.warning(f"broadcast pack not loaded: {e}")
 
 # ---- Runtime config overrides (persisted in Redis, applied on boot) ----
 # Specs live in commands/config_editor.py (single source of truth).

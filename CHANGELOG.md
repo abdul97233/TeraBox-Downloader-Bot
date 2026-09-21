@@ -4,6 +4,35 @@ All notable changes to the TeraBox Downloader Bot.
 
 ---
 
+## v3.3 — Modern Broadcast (2026-09-21)
+
+### Broadcast Center
+- **Button-based menu** — `/broadcast` opens interactive broadcast center
+- **📝 Text** — type message, preview, confirm, send
+- **📷 Media** — send photo/video, optionally add caption, preview, confirm
+- **🎭 Sticker** — send sticker, preview, confirm
+- **↩️ Forward** — reply to message, forward as-is (preserves format)
+- **Preview step** — see type, caption, recipient count before sending
+- **Edit before send** — go back to change content
+- **Cancel at any stage** — clean state reset
+
+### Progress & Reliability
+- **Live progress bar** — sent/failed/remaining counter
+- **FloodWait auto-resume** — waits and continues automatically
+- **Skip owner** — doesn't broadcast to bot owner
+- **Chunked sending** — 50 users per batch with 2s delay
+
+### New Files
+- **`commands/broadcast.py`** — state machine, menu, preview, send with progress
+
+### Updated Files
+- **`utils/flood.py`** — added `patient_send_file` for media broadcasts
+- **`main.py`** — registered broadcast pack, updated admin panel button
+- **`README.md`** — updated broadcast description, project structure
+- **`CHANGELOG.md`** — this entry
+
+---
+
 ## v3.2 — API Load Balancer (2026-09-15)
 
 ### Load Balancing

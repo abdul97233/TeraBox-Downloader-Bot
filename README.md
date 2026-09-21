@@ -90,7 +90,7 @@ Forwards to you instantly
 - `/userstats` — per-user download stats
 - `/apihealth` — API load balancer stats (success rate, latency, circuit state)
 - `/errors` — recent error log entries
-- `/broadcast` — send message to all users (reply-to-forward preserves format)
+- `/broadcast` — modern broadcast center (text, photo, video, sticker, forward)
 - `/announce 30 <msg>` — scheduled broadcast
 - `/cleandownloads` — clean downloads folder
 - `/maintenance` — toggle maintenance mode
@@ -343,6 +343,7 @@ TeraBox-Downloader-Bot/
 │   ├── admin_users.py   # /finduser, /ban, /unban, /addpremium, /masstag
 │   ├── analytics.py     # /stats, /userstats, /apihealth, /errors
 │   ├── backup.py        # /backup, /restore
+│   ├── broadcast.py     # Modern broadcast (text, media, sticker, forward)
 │   ├── cacheux.py       # Cache prompt (auto-send + Download Again)
 │   ├── cancel.py        # /cancel with tap-to-cancel buttons
 │   ├── config_editor.py # /configview, /configset, /configreset
@@ -353,7 +354,7 @@ TeraBox-Downloader-Bot/
 │   ├── redeem_core.py   # Shared gift card redeem logic
 │   ├── referral.py      # /referral, /refstats, expiry reminders
 │   ├── user_status.py   # /mystatus text builder
-│   └── ux.py            # /broadcast, /quick, /preview, gift card buttons
+│   └── ux.py            # /quick, /preview, gift card buttons
 │
 ├── utils/               # Shared utilities
 │   ├── errors.py        # Centralized user-facing error messages
