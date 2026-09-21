@@ -52,18 +52,23 @@ FORCE_GROUPS = [
 
 # ================== TERA BOX API ==================
 
-TERABOX_API_BASE = "https://your-terabox-api.com/"
-TERABOX_API_TOKEN = "your_api_token"
-
-TERABOX_API_TEMPLATE = (
-    f"{TERABOX_API_BASE}?authkey={TERABOX_API_TOKEN}&url={{url}}"
-)
-
-# Fallback API — used when primary API returns no files
-TERABOX_FALLBACK_API_BASE = "https://your-fallback-api.com/"
-TERABOX_FALLBACK_API_TEMPLATE = (
-    f"{TERABOX_FALLBACK_API_BASE}?authkey={TERABOX_API_TOKEN}&url={{url}}"
-)
+# API Endpoints — load-balanced across all entries
+# Add more endpoints here. No code changes needed.
+# Health-aware round-robin with circuit breaker distributes load automatically.
+API_ENDPOINTS = [
+    {
+        "name": "api-1",          # Friendly name for logs /apihealth
+        "url": "https://your-primary-api.com/",
+        "token": "your_api_token",
+    },
+    {
+        "name": "api-2",
+        "url": "https://your-secondary-api.com/",
+        "token": "your_api_token",
+    },
+    # Add more as needed:
+    # {"name": "api-3", "url": "https://...", "token": "..."},
+]
 
 # Self-hosted Telegram Bot API server (replaces https://api.telegram.org)
 # Enables high-speed uploads up to 2GB via the Bot HTTP API.

@@ -47,7 +47,8 @@ Forwards to you instantly
 - Quality selector — `/dl 720p <link>` or `/dl 1080p <link>`
 - Folder download — `/folder <link>` (premium)
 - Batch multi-file download
-- Fallback API — if primary fails, auto-tries secondary
+- **API load balancer** — distributes requests across N endpoints with health-aware routing
+- **Circuit breaker** — auto-disables failing APIs for 120s, auto-recovers
 - Cache system — instantly re-sends previously downloaded files
 - Searchable library — `/search <query>` to find past downloads
 
@@ -87,7 +88,7 @@ Forwards to you instantly
 - `/gclist` — paginated gift card list with usage tracking
 - `/stats` — bot statistics with top users/links
 - `/userstats` — per-user download stats
-- `/apihealth` — check API response times
+- `/apihealth` — API load balancer stats (success rate, latency, circuit state)
 - `/errors` — recent error log entries
 - `/broadcast` — send message to all users (reply-to-forward preserves format)
 - `/announce 30 <msg>` — scheduled broadcast
@@ -306,14 +307,12 @@ ADMINS = [123456789]
 FORCE_CHANNELS = ["@your_channel"]
 FORCE_GROUPS = ["@your_group"]
 
-# TeraBox API
-TERABOX_API_BASE = "https://your-terabox-api.com/"
-TERABOX_API_TOKEN = "your_token"
-TERABOX_API_TEMPLATE = f"{TERABOX_API_BASE}?authkey={TERABOX_API_TOKEN}&url={{url}}"
-
-# Fallback API
-TERABOX_FALLBACK_API_BASE = "https://your-fallback-api.com/"
-TERABOX_FALLBACK_API_TEMPLATE = f"{TERABOX_FALLBACK_API_BASE}?authkey={TERABOX_API_TOKEN}&url={{url}}"
+# TeraBox API — load-balanced across all endpoints
+# Add more endpoints here. No code changes needed.
+API_ENDPOINTS = [
+    {"name": "api-1", "url": "https://your-primary-api.com/", "token": "your_token"},
+    {"name": "api-2", "url": "https://your-secondary-api.com/", "token": "your_token"},
+]
 
 # Self-hosted Bot API (2GB uploads)
 TG_API_BASE = "https://your-bot-api-server.com"
@@ -360,6 +359,7 @@ TeraBox-Downloader-Bot/
 │   ├── errors.py        # Centralized user-facing error messages
 │   ├── flood.py         # FloodWait protection (edit backoff, patient helpers)
 │   ├── jobs.py          # Job registry, FFmpeg kill-on-cancel, inflight dedup
+│   ├── loadbalancer.py  # API load balancer (health-aware round-robin + circuit breaker)
 │   ├── logx.py          # API log redaction (URLs/tokens stripped)
 │   ├── premium.py       # Premium grant/revoke/check + tag cleanup
 │   └── tags.py          # Tag resolve/set/clear with premium expiry
@@ -383,6 +383,7 @@ TeraBox-Downloader-Bot/
 | Bot Framework | Telethon 1.42 (MTProto) |
 | Bot API Upload | aiohttp + self-hosted Bot API (2GB) |
 | Download | aiohttp (async, 3 retries) |
+| API Load Balancer | Health-aware round-robin + circuit breaker |
 | Photo Support | sendPhoto (native Telegram images) |
 | Database | Redis (cloud) |
 | Video Processing | ffmpeg (watermark, compress, extract) |

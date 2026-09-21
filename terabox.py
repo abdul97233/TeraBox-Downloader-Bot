@@ -2,12 +2,15 @@ import logging
 log = logging.getLogger(__name__)
 import asyncio
 import re
+import time as _time
 from urllib.parse import parse_qs, urlparse
 
 import aiohttp
 
-from config import TERABOX_API_TEMPLATE, TERABOX_FALLBACK_API_TEMPLATE
+from config import API_ENDPOINTS
 from tools import get_formatted_size
+from utils.loadbalancer import build_balancer, get_balancer, APIEndpoint
+from utils.logx import api_log_started, api_log_ok, api_log_failed, safe_exc
 
 
 # ---------------- URL VALIDATION ---------------- #
@@ -92,9 +95,9 @@ def extract_surl_from_url(url: str) -> str | None:
     return surl[0] if surl else False
 
 
-# ---------------- API SETTINGS ---------------- #
+# ---------------- LOAD BALANCER INIT ---------------- #
 
-# API endpoint template is imported from config (TERABOX_API_TEMPLATE)
+_balancer = build_balancer(API_ENDPOINTS)
 
 
 # ---------------- RETRY WRAPPER ---------------- #
@@ -137,8 +140,6 @@ async def _fetch_files_from_api(api_template: str, url: str, _api_name="api"):
     Never logs URLs, tokens, or raw responses — only api name, status,
     latency and short error classes.
     """
-    import time as _time
-    from utils.logx import api_log_started, api_log_ok, api_log_failed, safe_exc
     api_url = api_template.format(url=url)
     api_log_started(log, _api_name)
     t0 = _time.monotonic()
@@ -196,19 +197,36 @@ async def _fetch_files_from_api(api_template: str, url: str, _api_name="api"):
 
 
 async def get_files(url: str):
-    """Async: Fetch files via primary API, fallback to secondary if it fails."""
-    # Try primary API first
-    result = await _fetch_files_from_api(TERABOX_API_TEMPLATE, url, _api_name="primary")
-    if result:
-        return result
+    """Async: Fetch files via load-balanced API endpoints.
 
-    # Fallback to secondary API
-    log.info("Primary API failed, trying fallback API...")
-    result = await _fetch_files_from_api(TERABOX_FALLBACK_API_TEMPLATE, url, _api_name="fallback")
-    if result:
-        log.info("Primary failed, fallback ok")
-        return result
+    Tries each healthy endpoint in round-robin order.
+    If one fails, tries the next. Circuit breaker auto-disables
+    endpoints with 5+ consecutive failures for 120s.
+    """
+    t_start = _time.monotonic()
+    tried = 0
 
+    for _ in range(_balancer.active_count() or len(API_ENDPOINTS)):
+        ep = _balancer.next()
+        if not ep:
+            break
+
+        t0 = _time.monotonic()
+        result = await _fetch_files_from_api(ep.template, url, _api_name=ep.name)
+        latency_ms = int((_time.monotonic() - t0) * 1000)
+        tried += 1
+
+        if result:
+            _balancer.report_success(ep, latency_ms)
+            if tried > 1:
+                total_ms = int((_time.monotonic() - t_start) * 1000)
+                log.info(f"[LB] Succeeded on attempt {tried} ({ep.name}) in {total_ms}ms")
+            return result
+
+        _balancer.report_failure(ep)
+        log.info(f"[LB] {ep.name} failed, trying next...")
+
+    log.info(f"[LB] All endpoints failed after {tried} attempts")
     return False
 
 
@@ -221,8 +239,20 @@ async def get_data(url: str):
 
 
 async def get_fallback_files(url: str):
-    """Async: Fetch files via fallback API ONLY (fresh alternate dl URLs).
+    """Async: Fetch files via ALL endpoints to get fresh alternate dl URLs.
 
     Used to retry a download whose primary direct_link 502s.
+    Tries every endpoint and returns the first successful result.
     """
-    return await _fetch_files_from_api(TERABOX_FALLBACK_API_TEMPLATE, url, _api_name="fallback")
+    for ep_cfg in API_ENDPOINTS:
+        name = ep_cfg.get("name", "fallback")
+        url_template = ep_cfg["url"].rstrip("/")
+        token = ep_cfg.get("token", "")
+        if token:
+            template = f"{url_template}?authkey={token}&url={{url}}"
+        else:
+            template = f"{url_template}?url={{url}}"
+        result = await _fetch_files_from_api(template, url, _api_name=f"fallback-{name}")
+        if result:
+            return result
+    return False

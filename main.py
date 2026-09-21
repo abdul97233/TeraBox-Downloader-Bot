@@ -4240,10 +4240,12 @@ except Exception as e:
 
 try:
     from commands.analytics import register as _reg_analytics, track_download as _track_dl
+    from utils.loadbalancer import get_balancer as _get_lb
     _reg_analytics(bot, {
         "db": db, "is_admin": is_admin, "get_formatted_size": get_formatted_size,
         "api_templates": {"primary": TERABOX_API_TEMPLATE, "fallback": TERABOX_FALLBACK_API_TEMPLATE},
         "log_path": LOG_FILE,
+        "get_balancer": _get_lb,
     })
     _loaded_packs.append("analytics")
 except Exception as e:
@@ -4252,6 +4254,7 @@ except Exception as e:
 
 def _apply_api_templates(primary=None, fallback=None):
     import terabox as _tb
+    from utils.loadbalancer import build_balancer
     if primary:
         _tb.TERABOX_API_TEMPLATE = primary
         try:
@@ -4264,6 +4267,11 @@ def _apply_api_templates(primary=None, fallback=None):
             db.set("api_template:fallback", fallback)
         except Exception:
             pass
+    # Rebuild load balancer with updated templates
+    try:
+        _tb._balancer = build_balancer(API_ENDPOINTS)
+    except Exception:
+        pass
     return {"primary": _tb.TERABOX_API_TEMPLATE, "fallback": _tb.TERABOX_FALLBACK_API_TEMPLATE}
 
 

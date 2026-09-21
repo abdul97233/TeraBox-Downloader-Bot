@@ -4,6 +4,27 @@ All notable changes to the TeraBox Downloader Bot.
 
 ---
 
+## v3.2 — API Load Balancer (2026-09-15)
+
+### Load Balancing
+- **Health-Aware Round-Robin** — distributes requests across N API endpoints
+- **Circuit Breaker** — auto-disables endpoints after 5 consecutive failures (120s cooldown)
+- **Auto-recovery** — failing APIs automatically retried after cooldown expires
+- **Config-driven** — `API_ENDPOINTS` list in config.py, add/remove APIs without code changes
+- **Per-API stats** — success rate, avg latency, request count, circuit state
+
+### New Files
+- **`utils/loadbalancer.py`** — `APIEndpoint` class + `LoadBalancer` singleton
+
+### Config Changes
+- **`API_ENDPOINTS`** — new list format replaces old `TERABOX_API_TEMPLATE`/`TERABOX_FALLBACK_API_TEMPLATE`
+- Legacy templates kept for backward compatibility
+
+### Updated Commands
+- **`/apihealth`** — now shows load balancer stats (per-API success rate, latency, circuit state) + live probe
+
+---
+
 ## v3.1 — Extended Format Support (2026-09-15)
 
 ### Format Expansion
