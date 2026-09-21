@@ -2987,7 +2987,7 @@ async def update_bot(m: UpdateNewMessage):
                      "commands/analytics.py", "commands/maintenance.py",
                      "commands/ux.py", "commands/redeem_core.py",
                      "commands/config_editor.py", "commands/user_status.py",
-                     "utils/tags.py", "utils/premium.py"],
+                     "utils/tags.py", "utils/premium.py", "utils/loadbalancer.py"],
                     capture_output=True, text=True, cwd=cwd, timeout=30,
                 )
                 if check.returncode != 0:
