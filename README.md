@@ -64,7 +64,7 @@ Forwards to you instantly
 ### Media Tools
 - `/mp3` — Extract audio with bitrate selector (128/192/256/320 kbps)
 - `/compress` — Compress video with resolution selector (480p/720p/1080p, no upscaling)
-- Video watermark — `@TERA_NTM_BOT` on every video (mp4 only, veryfast preset)
+- Video watermark — `@TERA_NTM_BOT` on every video (mp4 only, veryfast preset, skipped >200MB)
 - Photos sent as native Telegram images (no watermark, no compression)
 
 ### User Experience
@@ -101,7 +101,8 @@ Forwards to you instantly
 - `/panic` — emergency stop all services
 - `/resume` — bring bot back online
 - `/backup` `/restore` — full Redis snapshot and merge restore
-- `/setapi` `/reloadconfig` — rotate API templates live
+- `/setapi add|remove|edit` — manage API load balancer endpoints from bot
+- `/reloadconfig` — rebuild load balancer
 - Parallel downloads — 5 concurrent, 10 total backpressure
 - FloodWait protection — global edit backoff, patient forwarding/replies
 - In-flight dedup — prevents duplicate downloads for same link
@@ -205,8 +206,8 @@ Forwards to you instantly
 | `/setcooldown <s>` | Set cooldown |
 | `/setplan <text>` | Update plan text |
 | `/announce <min> <msg>` | Scheduled broadcast |
-| `/setapi` | Rotate API template |
-| `/reloadconfig` | Reload API templates |
+| `/setapi [add\|remove\|edit ...]` | Manage API endpoints (load balancer) |
+| `/reloadconfig` | Rebuild load balancer |
 | `/logrotate` | Rotate bot.log |
 | `/configview` | View runtime config |
 | `/configset` | Edit runtime config |

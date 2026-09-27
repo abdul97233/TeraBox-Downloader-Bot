@@ -4,6 +4,25 @@ All notable changes to the TeraBox Downloader Bot.
 
 ---
 
+## v3.4 — API Management + Watermark Skip (2026-09-21)
+
+### API Endpoint Management from Bot
+- **`/setapi`** — shows current endpoints with health status
+- **`/setapi add <name> <url> [token]`** — add new API endpoint
+- **`/setapi remove <name>`** — remove endpoint
+- **`/setapi edit <name> <url> [token]`** — update endpoint URL/token
+- **`/setapi list`** — show all endpoints with stats
+- **Persisted to Redis** — endpoints survive restarts
+- **Legacy compatibility** — `/setapi primary|fallback <tpl>` still works
+
+### Watermark Optimization
+- **200MB limit for all users** — watermark skipped for files > 200MB (was 500MB for free, 200MB for premium)
+
+### Updated Commands
+- **`/reloadconfig`** — now rebuilds load balancer from persisted endpoints
+
+---
+
 ## v3.3 — Modern Broadcast (2026-09-21)
 
 ### Broadcast Center

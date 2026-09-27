@@ -2340,7 +2340,7 @@ async def handle_message(m: Message):
                     ".dav", ".hdv", ".svi", ".swf", ".amv", ".nsv",
                     ".roq", ".mng", ".ogm", ".trp", ".tp", ".pva",
                 ])
-        wm_limit = 500_000_000 if not is_premium else 200_000_000
+        wm_limit = 200_000_000  # Skip watermark for files > 200MB
         if fname_lower.endswith(".mp4") and 10240 < file_size < wm_limit and not skip_wm:
             try:
                 await hm.edit(f"✅ Downloaded `{data['file_name']}` — adding watermark...")
@@ -4304,6 +4304,26 @@ def _apply_saved_api_templates():
     """Boot: re-apply API templates persisted via /setapi."""
     try:
         import terabox as _tb
+        import json as _json
+
+        # Try loading persisted endpoints list first
+        try:
+            saved_eps = db.get("api_endpoints")
+        except Exception:
+            saved_eps = None
+
+        if saved_eps:
+            try:
+                eps = _json.loads(saved_eps)
+                if isinstance(eps, list) and eps:
+                    from utils.loadbalancer import build_balancer, APIEndpoint
+                    _tb._balancer = build_balancer(eps)
+                    log.info(f"Loaded {len(eps)} API endpoints from Redis")
+                    return
+            except Exception:
+                pass
+
+        # Fallback: load legacy primary/fallback templates
         for slot, attr in (("primary", "TERABOX_API_TEMPLATE"),
                            ("fallback", "TERABOX_FALLBACK_API_TEMPLATE")):
             try:
@@ -4312,6 +4332,25 @@ def _apply_saved_api_templates():
                 saved = None
             if saved and "{url}" in str(saved):
                 setattr(_tb, attr, str(saved))
+        # Rebuild balancer with updated templates
+        try:
+            from utils.loadbalancer import build_balancer
+            def _parse_legacy(tpl):
+                if "?" not in tpl:
+                    return tpl, ""
+                base = tpl.split("?")[0]
+                token = ""
+                if "authkey=" in tpl:
+                    token = tpl.split("authkey=")[1].split("&")[0]
+                return base, token
+            _p1, _t1 = _parse_legacy(_tb.TERABOX_API_TEMPLATE)
+            _p2, _t2 = _parse_legacy(_tb.TERABOX_FALLBACK_API_TEMPLATE)
+            _tb._balancer = build_balancer([
+                {"name": "primary", "url": _p1, "token": _t1},
+                {"name": "secondary", "url": _p2, "token": _t2},
+            ])
+        except Exception:
+            pass
     except Exception as e:
         try:
             log.warning(f"saved API templates not applied: {e}")
