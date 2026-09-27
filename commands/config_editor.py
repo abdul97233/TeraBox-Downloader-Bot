@@ -156,9 +156,11 @@ def register(bot, ctx):
         if not os.path.exists(config_path):
             return await m.reply("config.py not found.")
         try:
-            await m.reply("📤 Sending config.py backup...",
-                          file=config_path,
-                          caption="config.py backup — keep it safe! Restore with: reply to this file + /set_config")
+            await bot.send_file(
+                m.sender_id,
+                config_path,
+                caption="config.py backup — keep it safe! Restore with: reply to this file + /set_config",
+            )
             try:
                 log_audit("CONFIG_BACKUP", m.sender_id, "sent config.py")
             except Exception:
