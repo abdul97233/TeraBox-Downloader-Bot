@@ -212,6 +212,8 @@ Forwards to you instantly
 | `/configview` | View runtime config |
 | `/configset` | Edit runtime config |
 | `/configreset` | Reset config key |
+| `/config_backup` | Send config.py to bot |
+| `/set_config` | Restore config.py (reply to file) |
 | `/backup` | Export Redis data |
 | `/restore` | Restore from backup |
 | `/auditlog` | View admin action log |

@@ -4,6 +4,17 @@ All notable changes to the TeraBox Downloader Bot.
 
 ---
 
+## v3.5 — Config Backup/Restore (2026-09-21)
+
+### Config Backup
+- **`/config_backup`** — sends config.py file to owner via bot
+- **`/set_config`** — restore config.py by replying to a file
+- Syntax check before replacing — invalid config rejected
+- Auto-backup old config to `config.py.bak`
+- Audit log for both operations
+
+---
+
 ## v3.4 — API Management + Watermark Skip (2026-09-21)
 
 ### API Endpoint Management from Bot

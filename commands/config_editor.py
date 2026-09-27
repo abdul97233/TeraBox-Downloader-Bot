@@ -148,6 +148,93 @@ def register(bot, ctx):
     set_runtime = ctx["set_runtime"]
     reset_runtime = ctx.get("reset_runtime")
 
+    @bot.on(events.NewMessage(pattern=r"^/config_backup$", incoming=True, outgoing=False,
+                              func=lambda m: is_admin(m.sender_id)))
+    async def _config_backup(m):
+        import os
+        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.py")
+        if not os.path.exists(config_path):
+            return await m.reply("config.py not found.")
+        try:
+            await m.reply("📤 Sending config.py backup...",
+                          file=config_path,
+                          caption="config.py backup — keep it safe! Restore with: reply to this file + /set_config")
+            try:
+                log_audit("CONFIG_BACKUP", m.sender_id, "sent config.py")
+            except Exception:
+                pass
+        except Exception as e:
+            await m.reply(f"Failed to send config: `{e}`")
+
+    @bot.on(events.NewMessage(pattern=r"^/set_config$", incoming=True, outgoing=False,
+                              func=lambda m: is_admin(m.sender_id)))
+    async def _set_config(m):
+        import os
+        import py_compile
+        if not m.is_reply:
+            return await m.reply("**Usage:** Reply to a config.py file with `/set_config`")
+        try:
+            replied = await m.get_reply_message()
+        except Exception:
+            replied = None
+        if replied is None or not replied.file:
+            return await m.reply("Reply to a file (config.py).")
+        if not (replied.file.name or "").endswith(".py"):
+            return await m.reply("File must be `.py` (config.py).")
+        # Download the file
+        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.py")
+        try:
+            data = await replied.download_media(bytes)
+        except Exception as e:
+            return await m.reply(f"Download failed: `{e}`")
+        if not data:
+            return await m.reply("Empty file.")
+        # Syntax check before replacing
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8")
+        try:
+            tmp.write(data.decode("utf-8"))
+            tmp.close()
+            py_compile.compile(tmp.name, doraise=True)
+        except py_compile.PyCompileError as e:
+            try:
+                os.unlink(tmp.name)
+            except Exception:
+                pass
+            return await m.reply(f"❌ Syntax error — config NOT replaced:\n`{str(e)[:500]}`", parse_mode="markdown")
+        except Exception as e:
+            try:
+                os.unlink(tmp.name)
+            except Exception:
+                pass
+            return await m.reply(f"❌ Validation failed — config NOT replaced: `{e}`")
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+        # Backup current config
+        try:
+            if os.path.exists(config_path):
+                os.replace(config_path, config_path + ".bak")
+        except Exception:
+            pass
+        # Write new config
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                f.write(data.decode("utf-8"))
+        except Exception as e:
+            return await m.reply(f"Write failed: `{e}`")
+        try:
+            log_audit("SET_CONFIG", m.sender_id, f"replaced config.py ({len(data)} bytes)")
+        except Exception:
+            pass
+        await m.reply(
+            "✅ **config.py replaced successfully!**\n\n"
+            "Old config backed up as `config.py.bak`\n\n"
+            "Run `/restart` to apply changes.",
+            parse_mode="markdown",
+        )
+
     @bot.on(events.NewMessage(pattern=r"^/configview$", incoming=True, outgoing=False,
                               func=lambda m: is_admin(m.sender_id)))
     async def _configview(m):
