@@ -313,15 +313,21 @@ def register(bot, ctx):
         else:
             lines.append("_Load balancer not initialized_")
 
-        # Live probe
-        lines.append("\n**Live Probe:**")
-        res = await check_api_health(api_templates, timeout=10)
-        if res:
-            for name, r in res.items():
-                state = r.get("state", "UP" if r["ok"] else "DOWN")
-                lines.append(f"  {state} **{name}**: {r['latency_ms']}ms")
+        # Live probe ALL load balancer endpoints
+        lines.append("\n**Live Ping Test:**")
+        if lb and lb.endpoints:
+            probe_templates = {}
+            for ep in lb.endpoints:
+                probe_templates[ep.name] = ep.template
+            res = await check_api_health(probe_templates, timeout=10)
+            if res:
+                for name, r in res.items():
+                    state = r.get("state", "UP" if r["ok"] else "DOWN")
+                    lines.append(f"  {state} **{name}**: {r['latency_ms']}ms")
+            else:
+                lines.append("  _Probe failed_")
         else:
-            lines.append("  _No templates configured_")
+            lines.append("  _No endpoints configured_")
 
         await m.reply("\n".join(lines), parse_mode="markdown")
 
