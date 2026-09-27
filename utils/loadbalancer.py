@@ -133,11 +133,17 @@ def build_balancer(endpoints_cfg: list[dict]) -> LoadBalancer:
     Build the global balancer from config.API_ENDPOINTS.
 
     Each entry: {"name": str, "url": str, "token": str}
+    Or:         {"name": str, "template": str} (from Redis persist)
     """
     global _balancer
     eps = []
     for ep_cfg in endpoints_cfg:
         name = ep_cfg.get("name", f"api{len(eps)+1}")
+        # Support pre-built template (from Redis persist)
+        template = ep_cfg.get("template")
+        if template:
+            eps.append(APIEndpoint(name, template))
+            continue
         url = ep_cfg["url"].rstrip("/")
         token = ep_cfg.get("token", "")
         if token:
