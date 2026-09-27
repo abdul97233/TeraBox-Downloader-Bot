@@ -118,10 +118,10 @@ def _done_text(sent, failed, total):
 
 # ─── User ID Collection ─────────────────────────────────────────
 
-def _collect_ids(get_all_users_fn, sender_id):
+async def _collect_ids(get_all_users_fn, sender_id):
     res = get_all_users_fn()
     if hasattr(res, "__await__"):
-        res = asyncio.get_event_loop().run_until_complete(res)
+        res = await res
     ids = []
     for u in (res or []):
         try:
@@ -139,12 +139,39 @@ def _chunk(ids, size=BROADCAST_CHUNK):
 
 # ─── Broadcast Sender ───────────────────────────────────────────
 
+async def _deliver(bot, uid, state):
+    """Send one broadcast item to one user. Raises on failure."""
+    btype = state["type"]
+    if btype == "text":
+        await bot.send_message(uid, state["text"])
+    elif btype in ("media_photo", "media_video", "media_document"):
+        file_id = state.get("file_id")
+        caption = state.get("caption", "")
+        if file_id:
+            await bot.send_file(uid, file_id, caption=caption)
+        else:
+            await bot.send_message(uid, caption or "(no content)")
+    elif btype == "sticker":
+        file_id = state.get("file_id")
+        if not file_id:
+            raise RuntimeError("no sticker file")
+        await bot.send_file(uid, file_id)
+    elif btype == "forward":
+        fwd_src = state.get("reply_to")
+        if not fwd_src:
+            raise RuntimeError("no forward source")
+        # drop_author=True strips the "Forwarded from" tag (sends as copy)
+        await bot.forward_messages(uid, fwd_src, drop_author=True)
+    else:
+        raise RuntimeError(f"unknown broadcast type: {btype}")
+
+
 async def _send_broadcast(bot, state, status_msg, sender_id):
     get_all_users_fn = state.get("get_all_users")
     if not get_all_users_fn:
         return await status_msg.edit("❌ Broadcast source not configured.")
 
-    ids = _collect_ids(get_all_users_fn, sender_id)
+    ids = await _collect_ids(get_all_users_fn, sender_id)
     if not ids:
         return await status_msg.edit("❌ No users found to broadcast to.")
 
@@ -156,30 +183,7 @@ async def _send_broadcast(bot, state, status_msg, sender_id):
     for ch in chunks:
         for uid in ch:
             try:
-                btype = state["type"]
-                if btype == "text":
-                    await bot.send_message(uid, state["text"])
-                elif btype in ("media_photo", "media_video", "media_document"):
-                    file_id = state.get("file_id")
-                    caption = state.get("caption", "")
-                    if file_id:
-                        await bot.send_file(uid, file_id, caption=caption)
-                    else:
-                        await bot.send_message(uid, caption or "(no content)")
-                elif btype == "sticker":
-                    file_id = state.get("file_id")
-                    if file_id:
-                        await bot.send_file(uid, file_id)
-                    else:
-                        failed += 1
-                        continue
-                elif btype == "forward":
-                    fwd_src = state.get("reply_to")
-                    if fwd_src:
-                        await bot.forward_messages(uid, fwd_src)
-                    else:
-                        failed += 1
-                        continue
+                await _deliver(bot, uid, state)
                 sent += 1
             except Exception as e:
                 if type(e).__name__ == "FloodWaitError":
@@ -194,29 +198,7 @@ async def _send_broadcast(bot, state, status_msg, sender_id):
                         pass
                     await asyncio.sleep(secs + 5)
                     try:
-                        if btype == "text":
-                            await bot.send_message(uid, state["text"])
-                        elif btype in ("media_photo", "media_video", "media_document"):
-                            file_id = state.get("file_id")
-                            caption = state.get("caption", "")
-                            if file_id:
-                                await bot.send_file(uid, file_id, caption=caption)
-                            else:
-                                await bot.send_message(uid, caption or "(no content)")
-                        elif btype == "sticker":
-                            file_id = state.get("file_id")
-                            if file_id:
-                                await bot.send_file(uid, file_id)
-                            else:
-                                failed += 1
-                                continue
-                        elif btype == "forward":
-                            fwd_src = state.get("reply_to")
-                            if fwd_src:
-                                await bot.forward_messages(uid, fwd_src)
-                            else:
-                                failed += 1
-                                continue
+                        await _deliver(bot, uid, state)
                         sent += 1
                         continue
                     except Exception:
@@ -224,11 +206,10 @@ async def _send_broadcast(bot, state, status_msg, sender_id):
                 failed += 1
 
         # Update progress after each chunk
-        if (sent + failed) % PROGRESS_UPDATE_INTERVAL == 0 or (sent + failed) == total:
-            try:
-                await status_msg.edit(_progress_text(sent, failed, total), parse_mode="markdown")
-            except Exception:
-                pass
+        try:
+            await status_msg.edit(_progress_text(sent, failed, total), parse_mode="markdown")
+        except Exception:
+            pass
         await asyncio.sleep(2.0)
 
     # Final update
@@ -273,7 +254,7 @@ def register(bot, ctx):
             if fwd_src is None:
                 return await m.reply("Could not read the replied message.")
 
-            ids = _collect_ids(get_all_users, m.sender_id)
+            ids = await _collect_ids(get_all_users, m.sender_id)
             state = {
                 "type": "forward",
                 "reply_to": fwd_src,
@@ -287,7 +268,7 @@ def register(bot, ctx):
         # Legacy: /broadcast <text> → text mode
         text = (m.text or "").split("/broadcast", 1)[1].strip()
         if text:
-            ids = _collect_ids(get_all_users, m.sender_id)
+            ids = await _collect_ids(get_all_users, m.sender_id)
             state = {
                 "type": "text",
                 "text": text,
@@ -384,6 +365,10 @@ def register(bot, ctx):
         if not _is_owner(m.sender_id):
             return
 
+        # Don't swallow commands (/broadcast, /start, etc.)
+        if (m.text or "").startswith("/"):
+            return
+
         state = _get_state(m.sender_id)
         if not state:
             return
@@ -397,7 +382,7 @@ def register(bot, ctx):
                 return
             state["type"] = "text"
             state["text"] = text
-            ids = _collect_ids(get_all_users, m.sender_id)
+            ids = await _collect_ids(get_all_users, m.sender_id)
             state["recipient_count"] = len(ids)
             _set_state(m.sender_id, state)
             await m.reply(_preview_text(state), parse_mode="markdown", buttons=_preview_buttons())
@@ -409,31 +394,16 @@ def register(bot, ctx):
             file_id = None
             detected_type = None
 
-            if m.photo:
-                file_id = m.photo
-                detected_type = "media_photo"
-            elif m.video:
-                file_id = m.video
-                detected_type = "media_video"
-            elif m.document:
-                if is_sticker:
+            if is_sticker:
+                if m.sticker:
+                    file_id = m.sticker
+                elif m.document:
                     file_id = m.document
-                    detected_type = "sticker"
                 else:
-                    file_id = m.document
-                    detected_type = "media_document"
-            elif m.sticker:
-                file_id = m.sticker
-                detected_type = "sticker"
-            else:
-                return await m.reply("Please send a photo, video, or sticker.")
-
-            state["type"] = detected_type
-            state["file_id"] = file_id
-            state["original_msg"] = m
-
-            if is_sticker or detected_type == "sticker":
-                ids = _collect_ids(get_all_users, m.sender_id)
+                    return await m.reply("Please send a sticker.")
+                state["type"] = "sticker"
+                state["file_id"] = file_id
+                ids = await _collect_ids(get_all_users, m.sender_id)
                 state["recipient_count"] = len(ids)
                 _set_state(m.sender_id, state)
                 return await m.reply(
@@ -442,7 +412,26 @@ def register(bot, ctx):
                     buttons=_preview_buttons(),
                 )
 
-            # Ask about caption
+            if m.photo:
+                file_id = m.photo
+                detected_type = "media_photo"
+            elif m.video:
+                file_id = m.video
+                detected_type = "media_video"
+            elif m.sticker:
+                return await m.reply("That's a sticker — tap **Sticker** from the menu instead.")
+            elif m.document:
+                file_id = m.document
+                detected_type = "media_document"
+            else:
+                return await m.reply("Please send a photo, video, or document.")
+
+            state["file_id"] = file_id
+            state["original_msg"] = m
+
+            # Ask about caption (state type switches to wait_caption)
+            state["pending_type"] = detected_type
+            state["type"] = "wait_caption"
             _set_state(m.sender_id, state)
             await m.reply(
                 "✏️ Add a caption?\n\nSend the caption text, or tap **No Caption** to skip.",
@@ -459,12 +448,15 @@ def register(bot, ctx):
             caption = (m.text or "").strip()
             if caption.startswith("/"):
                 return
+            if not caption:
+                return await m.reply("Please send a **text** caption, or tap **No Caption**.",
+                                     parse_mode="markdown")
             state = _get_state(m.sender_id)
             if not state:
                 return
             state["type"] = state.get("pending_type", "media_photo")
             state["caption"] = caption
-            ids = _collect_ids(get_all_users, m.sender_id)
+            ids = await _collect_ids(get_all_users, m.sender_id)
             state["recipient_count"] = len(ids)
             _set_state(m.sender_id, state)
             await m.reply(_preview_text(state), parse_mode="markdown", buttons=_preview_buttons())
@@ -483,7 +475,7 @@ def register(bot, ctx):
 
         state["type"] = state.get("pending_type", "media_photo")
         state["caption"] = ""
-        ids = _collect_ids(get_all_users, e.sender_id)
+        ids = await _collect_ids(get_all_users, e.sender_id)
         state["recipient_count"] = len(ids)
         _set_state(e.sender_id, state)
 

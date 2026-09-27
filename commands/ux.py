@@ -3,7 +3,6 @@
 Pure logic only — no imports from main.py (avoids circular imports).
 """
 
-import asyncio
 import re
 
 from telethon import Button, events
@@ -168,12 +167,9 @@ async def _auto_redeem_button(e, bot, ctx):
 
 
 def register(bot, ctx):
-    """Wire /quick, /preview, /broadcast + gift-card buttons."""
-    db = _ctx(ctx, "db")
-    owner_id = _ctx(ctx, "OWNER_ID")
+    """Wire /quick, /preview + gift-card buttons. (/broadcast lives in commands/broadcast.py)"""
     get_files_fn = _ctx(ctx, "get_files")
     download_single = _ctx(ctx, "download_single")
-    get_all_users = _ctx(ctx, "get_all_users")
 
     @bot.on(events.NewMessage(pattern=r"/quick\s+(\S+)", incoming=True, outgoing=False))
     async def _quick(m):
@@ -210,79 +206,5 @@ def register(bot, ctx):
     async def _redeem_btn(e):
         await _auto_redeem_button(e, bot, ctx)
 
-    @bot.on(events.NewMessage(pattern=r"^/broadcast(?:\s|$)", incoming=True, outgoing=False))
-    async def _broadcast(m):
-        if owner_id is None or int(m.sender_id) != int(owner_id):
-            return await m.reply("Owner only.")
-        # Reply mode: forward the replied message as-is (format + buttons kept)
-        fwd_src = None
-        if m.is_reply:
-            try:
-                fwd_src = await m.get_reply_message()
-            except Exception:
-                fwd_src = None
-            if fwd_src is None:
-                return await m.reply("Could not read the replied message.")
-        else:
-            text = (m.text or "").split("/broadcast", 1)[1].strip() if "/broadcast" in (m.text or "") else ""
-            if not text:
-                return await m.reply("**Usage:** `/broadcast <message>`\nOr reply to any message with `/broadcast`.")
-        if not get_all_users:
-            return await m.reply("Broadcast source not configured.")
-        res = get_all_users()
-        if hasattr(res, "__await__"):
-            res = await res
-        ids = []
-        for u in (res or []):
-            try:
-                uid = int(getattr(u, "id", u))
-                if uid != int(m.sender_id):
-                    ids.append(uid)
-            except Exception:
-                continue
-        chunks = broadcast_split(ids, "")
-        mode = "forward" if fwd_src else "text"
-        status = await m.reply(f"Broadcasting ({mode}) to {len(ids)} users...")
-        sent = failed = 0
-        for ch in chunks:
-            for uid in ch:
-                try:
-                    if fwd_src:
-                        await bot.forward_messages(uid, fwd_src)
-                    else:
-                        await bot.send_message(uid, text)
-                    sent += 1
-                except Exception as e:
-                    if type(e).__name__ == "FloodWaitError":
-                        try:
-                            secs = int(getattr(e, "seconds", 60) or 60)
-                        except Exception:
-                            secs = 60
-                        try:
-                            await status.edit(f"⏳ Flood-wait {secs}s — resuming automatically... ({sent}/{len(ids)} done)")
-                        except Exception:
-                            pass
-                        try:
-                            await asyncio.sleep(secs + 5)
-                        except Exception:
-                            pass
-                        try:
-                            if fwd_src:
-                                await bot.forward_messages(uid, fwd_src)
-                            else:
-                                await bot.send_message(uid, text)
-                            sent += 1
-                            continue
-                        except Exception:
-                            pass
-                    failed += 1
-            await asyncio.sleep(2.0)
-        try:
-            db.incr("stats:broadcasts")
-        except Exception:
-            pass
-        note = "" if not failed else "\nFailed = blocked/deleted accounts."
-        try:
-            await status.edit(f"**Broadcast Complete**\nTotal: **{len(ids)}**\nSent: **{sent}**\nFailed: **{failed}**{note}", parse_mode="markdown")
-        except Exception:
-            pass
+    # Legacy /broadcast handler removed — commands/broadcast.py owns /broadcast
+    # (text, reply-forward with drop_author, preview flow).

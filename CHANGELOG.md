@@ -4,6 +4,20 @@ All notable changes to the TeraBox Downloader Bot.
 
 ---
 
+## v3.6 — Broadcast Fixes (2026-09-21)
+
+### Broadcast Overhaul
+- **Removed duplicate legacy `/broadcast` handler** in `commands/ux.py` — both handlers were firing, causing double sends (one with forward tag, one preview)
+- **Removed "Forwarded from" tag** — reply+`/broadcast` now uses `drop_author=True` (sends as copy)
+- **Fixed caption flow** — media broadcast now correctly switches to `wait_caption` state (caption input was silently ignored before)
+- **Sticker detection fixed** — `m.sticker` checked before `m.document`; sticker mode requires a sticker, media mode rejects stickers
+- **Async-safe user collection** — `_collect_ids` awaits coroutines directly instead of `run_until_complete` (crashed inside running loop)
+- **Consolidated send logic** — single `_deliver()` helper (text/media/sticker/forward) used for normal + FloodWait-retry paths
+- **Commands no longer swallowed** — `/command` messages ignored by broadcast content handler while waiting for input
+- **Progress updates every chunk** — removed broken modulo check that rarely triggered
+
+---
+
 ## v3.5 — Config Backup/Restore (2026-09-21)
 
 ### Config Backup
