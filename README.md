@@ -19,6 +19,13 @@
 
 ---
 
+> ⚠️ **Disclaimer: For educational purposes only.**  
+> This project is intended for learning and research.  
+> Respect TeraBox's Terms of Service and copyright laws.  
+> The authors are not responsible for any misuse. 🤷‍♂️🤣
+
+---
+
 ## How It Works
 
 ```
