@@ -4369,33 +4369,38 @@ async def show_limit(m: UpdateNewMessage):
             f"Custom limit: **{custom or 'None (uses default)'}**\n"
             f"Effective limit: **{custom if custom else (0 if is_prem else FREE_DOWNLOAD_LIMIT)}** downloads/hour"
         )
-    else:
-        # Show global settings
-        text = (
-            f"📊 **Current Limit Settings**\n\n"
-            f"**Global Defaults:**\n"
-            f"Free users: **{FREE_DOWNLOAD_LIMIT}** downloads/hour\n"
-            f"Premium users: **{'Unlimited' if PREMIUM_DOWNLOAD_LIMIT == 0 else str(PREMIUM_DOWNLOAD_LIMIT)}**\n"
-            f"Max files per link (free): **{MAX_FILES_PER_REQUEST}**\n"
-            f"Download cooldown: **{DOWNLOAD_COOLDOWN_SECONDS}s**\n\n"
-            f"**Custom User Limits:**\n"
-        )
-        # List users with custom limits
-        try:
-            # Scan for user_limit keys
+        await m.reply(text, parse_mode="markdown")
+        return
+    
+    # Show global settings
+    text = (
+        f"📊 **Current Limit Settings**\n\n"
+        f"**Global Defaults:**\n"
+        f"Free users: **{FREE_DOWNLOAD_LIMIT}** downloads/hour\n"
+        f"Premium users: **{'Unlimited' if PREMIUM_DOWNLOAD_LIMIT == 0 else str(PREMIUM_DOWNLOAD_LIMIT)}**\n"
+        f"Max files per link (free): **{MAX_FILES_PER_REQUEST}**\n"
+        f"Download cooldown: **{DOWNLOAD_COOLDOWN_SECONDS}s**\n\n"
+        f"**Custom User Limits:**\n"
+    )
+    # List users with custom limits - run scan in executor to avoid blocking
+    try:
+        loop = asyncio.get_running_loop()
+        def _scan():
             custom_users = []
             for key in db.scan_iter("user_limit:*"):
                 uid = key.decode().split(":")[1]
                 val = db.get(key)
                 custom_users.append(f"`{uid}` → **{val}**/hour")
-            if custom_users:
-                text += "\n".join(custom_users[:20])
-                if len(custom_users) > 20:
-                    text += f"\n... and {len(custom_users) - 20} more"
-            else:
-                text += "None set"
-        except Exception:
-            text += "Unable to fetch (Redis scan error)"
+            return custom_users
+        custom_users = await loop.run_in_executor(None, _scan)
+        if custom_users:
+            text += "\n".join(custom_users[:20])
+            if len(custom_users) > 20:
+                text += f"\n... and {len(custom_users) - 20} more"
+        else:
+            text += "None set"
+    except Exception:
+        text += "Unable to fetch (Redis scan error)"
     
     await m.reply(text, parse_mode="markdown")
 
