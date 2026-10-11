@@ -2436,12 +2436,26 @@ async def handle_message(m: Message):
 
         if sent_id is None:
             try:
-                file = await bot.send_file(
-                    PRIVATE_CHAT_ID, file=download, thumb=thumbnail if thumbnail else None,
-                    progress_callback=lambda c, t: progress_bar(c, t, "Uploading"), caption=caption, video=True,
-                    supports_streaming=True, duration=vduration, attributes=[], spoiler=True,
+                file = await asyncio.wait_for(
+                    bot.send_file(
+                        PRIVATE_CHAT_ID, file=download, thumb=thumbnail if thumbnail else None,
+                        progress_callback=lambda c, t: progress_bar(c, t, "Uploading"), caption=caption, video=True,
+                        supports_streaming=True, duration=vduration, attributes=[], spoiler=True,
+                    ),
+                    timeout=300,
                 )
                 sent_id = file.id
+            except asyncio.TimeoutError:
+                log.info(f"Telethon upload timed out after 300s")
+                try:
+                    os.unlink(download)
+                except Exception:
+                    pass
+                return await _fail_single_dl(
+                    db, shorturl, hm,
+                    f"Sorry! Upload timed out but you can download it from [here]({url}).",
+                    m.sender_id, _job["id"],
+                )
             except Exception as e:
                 log.info(f"Telethon upload failed: {e}")
                 try:
@@ -2685,13 +2699,18 @@ async def handle_message(m: Message):
 
                 if sent_id is None:
                     try:
-                        file = await bot.send_file(
-                            PRIVATE_CHAT_ID, file=download, caption=caption,
-                            video=True, supports_streaming=True, spoiler=True,
-                            thumb=_mthumb if _mthumb and os.path.isfile(_mthumb) else None,
-                            progress_callback=lambda c, t: progress_bar(c, t, "Uploading"),
+                        file = await asyncio.wait_for(
+                            bot.send_file(
+                                PRIVATE_CHAT_ID, file=download, caption=caption,
+                                video=True, supports_streaming=True, spoiler=True,
+                                thumb=_mthumb if _mthumb and os.path.isfile(_mthumb) else None,
+                                progress_callback=lambda c, t: progress_bar(c, t, "Uploading"),
+                            ),
+                            timeout=300,
                         )
                         sent_id = file.id
+                    except asyncio.TimeoutError:
+                        log.info(f"Multi Telethon upload timed out after 300s")
                     except Exception as e:
                         log.info(f"Multi Telethon upload failed: {e}")
 
@@ -3744,13 +3763,18 @@ async def folder_download(m: UpdateNewMessage):
 
             if sent_id is None:
                 try:
-                    file = await bot.send_file(
-                        PRIVATE_CHAT_ID, file=download, caption=caption,
-                        video=True, supports_streaming=True, spoiler=True,
-                        thumb=_fthumb if _fthumb and os.path.isfile(_fthumb) else None,
-                        progress_callback=lambda c, t: progress_bar(c, t, "Uploading"),
+                    file = await asyncio.wait_for(
+                        bot.send_file(
+                            PRIVATE_CHAT_ID, file=download, caption=caption,
+                            video=True, supports_streaming=True, spoiler=True,
+                            thumb=_fthumb if _fthumb and os.path.isfile(_fthumb) else None,
+                            progress_callback=lambda c, t: progress_bar(c, t, "Uploading"),
+                        ),
+                        timeout=300,
                     )
                     sent_id = file.id
+                except asyncio.TimeoutError:
+                    log.info(f"Folder Telethon upload timed out after 300s")
                 except Exception as e:
                     log.info(f"Folder Telethon upload failed: {e}")
 

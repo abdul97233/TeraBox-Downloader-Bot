@@ -343,7 +343,7 @@ def _bot_api_send(base_url, token, chat_id, file_path, caption, filename, progre
                 if thumb and is_video and os.path.isfile(thumb):
                     files_dict["thumb"] = ("thumb.jpg", open(thumb, "rb"), "image/jpeg")
                 try:
-                    resp = requests.post(url, files=files_dict, data=data, timeout=1800)
+                    resp = requests.post(url, files=files_dict, data=data, timeout=300)
                 finally:
                     if "thumb" in files_dict:
                         try:
@@ -373,10 +373,17 @@ async def send_document_via_api(base_url, token, chat_id, file_path, caption, fi
                                  duration=0, width=0, height=0, thumb=None):
     """Async wrapper around the Bot API upload (runs in a thread)."""
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(
-        None, _bot_api_send, base_url, token, chat_id, file_path, caption, filename, progress_callback, loop,
-        duration, width, height, thumb
-    )
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(
+                None, _bot_api_send, base_url, token, chat_id, file_path, caption, filename, progress_callback, loop,
+                duration, width, height, thumb
+            ),
+            timeout=330,
+        )
+    except asyncio.TimeoutError:
+        log.info("Bot API upload timed out after 330s (thread may still be running)")
+        return {"ok": False, "description": "upload timeout"}
 
 
 def check_url_patterns(url: str) -> bool:

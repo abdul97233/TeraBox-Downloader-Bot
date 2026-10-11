@@ -4,6 +4,16 @@ All notable changes to the TeraBox Downloader Bot.
 
 ---
 
+## v3.7 — Upload Timeout Fixes (2026-09-21)
+
+### Upload Stuck-for-Hours Fixed
+- **Bot API upload timeout reduced** from 1800s (30 min) → 300s (5 min) in `_bot_api_send` (tools.py:346)
+- **Telethon send_file fallback wrapped** with `asyncio.wait_for(timeout=300)` at all 3 upload paths (main.py)
+- **send_document_via_api async wrapper** now has 330s timeout as safety net
+- Prevents uploads hanging for 30-60 minutes on network issues
+
+---
+
 ## v3.6 — Broadcast Fixes (2026-09-21)
 
 ### Broadcast Overhaul
