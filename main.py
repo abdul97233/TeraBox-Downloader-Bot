@@ -2122,6 +2122,9 @@ async def process_next_in_queue(bot, db, user_id):
             self.is_private = True
             self.is_reply = False
             self.id = 0
+
+        async def reply(self, text, **kwargs):
+            return await bot.send_message(self.chat_id, text, **kwargs)
     fake_msg = FakeMessage(user_id, url)
     try:
         await handle_message(fake_msg)
