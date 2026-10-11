@@ -500,6 +500,22 @@ def get_urls_from_string(string: str) -> str | None:
     return urls[0]
 
 
+def get_all_urls_from_string(string: str) -> list[str]:
+    """
+    Extracts all valid TeraBox URLs from a given string.
+
+    Parameters:
+        string (str): The input string.
+
+    Returns:
+        list: List of all valid TeraBox URLs found in the input string.
+    """
+    pattern = r"(https?://\S+)"
+    urls = re.findall(pattern, string)
+    urls = [url for url in urls if check_url_patterns(url)]
+    return urls
+
+
 def extract_surl_from_url(url: str) -> str:
     """
     Extracts the surl from a URL.

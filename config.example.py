@@ -14,7 +14,6 @@ HOST = "localhost"
 PORT = 6379
 PASSWORD = None   # Set to None if Redis has no password
 
-
 # ================== BOT SETTINGS ==================
 
 # Private storage chat where files are uploaded
@@ -23,6 +22,12 @@ PRIVATE_CHAT_ID = -1001234567890
 
 # Folder where downloaded videos are stored on the VPS
 DOWNLOAD_DIR = "downloads"
+
+# Download limits (can be changed at runtime via /setlimit)
+FREE_DOWNLOAD_LIMIT = 10        # Downloads per hour for free users (0 = unlimited)
+PREMIUM_DOWNLOAD_LIMIT = 0      # 0 = unlimited
+MAX_FILES_PER_REQUEST = 10      # Max files per single link for free users
+DOWNLOAD_COOLDOWN_SECONDS = 10  # Cooldown between downloads (free users)
 
 
 # ================== ADMIN & OWNER ==================
@@ -53,18 +58,20 @@ FORCE_GROUPS = [
 # ================== TERA BOX API ==================
 
 # API Endpoints — load-balanced across all entries
+# Get your free API token from: https://ntmterabox.me/  (Message @ntmteraapi on Telegram)
+# Each user gets a custom domain like: https://api-xxx.ntmterabox.me/
 # Add more endpoints here. No code changes needed.
 # Health-aware round-robin with circuit breaker distributes load automatically.
 API_ENDPOINTS = [
     {
         "name": "api-1",          # Friendly name for logs /apihealth
-        "url": "https://your-primary-api.com/",
-        "token": "your_api_token",
+        "url": "https://YOUR_CUSTOM_DOMAIN.ntmterabox.me/",
+        "token": "your_token_id.secret",
     },
     {
         "name": "api-2",
-        "url": "https://your-secondary-api.com/",
-        "token": "your_api_token",
+        "url": "https://YOUR_CUSTOM_DOMAIN2.ntmterabox.me/",
+        "token": "your_token_id.secret",
     },
     # Add more as needed:
     # {"name": "api-3", "url": "https://...", "token": "..."},

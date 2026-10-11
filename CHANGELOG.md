@@ -4,6 +4,33 @@ All notable changes to the TeraBox Downloader Bot.
 
 ---
 
+## v3.8 — Limits, Multi-Link & User Management (2026-09-21)
+
+### Configurable Download Limits
+- **New config vars**: `FREE_DOWNLOAD_LIMIT`, `PREMIUM_DOWNLOAD_LIMIT`, `MAX_FILES_PER_REQUEST`, `DOWNLOAD_COOLDOWN_SECONDS`
+- **Runtime commands** (owner only):
+  - `/setlimit free <n>` — set free user hourly limit
+  - `/setlimit premium <n>` — set premium user hourly limit (0 = unlimited)
+  - `/maxfiles <n>` — max files per single link (free users)
+  - `/setcooldown <seconds>` — download cooldown for free users
+  - `/userlimit <user_id> <n>` — custom limit for specific user (0 = unlimited)
+- **Owner bypasses all limits** — no rate limits, no file limits, no cooldowns
+
+### Multi-Link Support
+- **`get_all_urls_from_string()`** in tools.py extracts all valid TeraBox URLs from a message
+- When multiple links sent in one message, bot processes each sequentially
+
+### New User Notification with Tap-to-Contact
+- Admin notification now includes clickable user name (`tg://user?id=ID`) for direct contact
+- Works even when user has no username
+
+### Other Improvements
+- Updated welcome text to show current free user limit dynamically
+- Rate limit error messages use translation system with `{limit}` placeholder
+- Nepali/Hindi translations updated
+
+---
+
 ## v3.7 — Upload Timeout Fixes (2026-09-21)
 
 ### Upload Stuck-for-Hours Fixed

@@ -86,8 +86,6 @@ COOLDOWN_KEY = "download_cooldown"     # Redis STRING — user_id → timestamp
 DYNAMIC_ADMINS_KEY = "dynamic_admins"  # Redis SET — dynamically added admin IDs
 CUSTOM_TAGS_KEY = "custom_tags"        # Redis HASH — user_id → custom tag
 GC_USED_KEY = "gc_used"                # Redis HASH — code → "user_id:timestamp:days"
-MAX_FILES_PER_REQUEST = 10
-DOWNLOAD_COOLDOWN_SECONDS = 10
 PARALLEL_DOWNLOADS = 5
 download_semaphore = asyncio.Semaphore(PARALLEL_DOWNLOADS)
 
@@ -418,7 +416,7 @@ def _main_menu_buttons(uid):
     )
 )
 async def command_help(m: UpdateNewMessage):
-    text = WELCOME_TEXT.format(name=m.sender.first_name)
+    text = WELCOME_TEXT.format(name=m.sender.first_name, free_limit=FREE_DOWNLOAD_LIMIT)
     buttons = _main_menu_buttons(m.sender_id)
 
     await m.reply(
@@ -1054,7 +1052,7 @@ WELCOME_TEXT = """
 
 Simply send me a **TeraBox link** and I'll download the video for you instantly.
 
-⚡ Free: 10 downloads/hour
+⚡ Free: {free_limit} downloads/hour
 ⭐ Premium: Unlimited + no limits
 
 Choose an option below 👇
@@ -1092,10 +1090,18 @@ async def start(m: UpdateNewMessage):
 
     # Notify admins (skip when the starter is an admin themselves)
     if user_id not in get_all_admins():
-        admin_message = f"👤 New user started bot:\nName: {name}\nUsername: @{user.username or '-'}\nID: `{user_id}`"
+        # Use tg:// deep link for tap-to-contact when no username
+        username_display = f"@{user.username}" if user.username else "No username"
+        user_link = f"[{name}](tg://user?id={user_id})"
+        admin_message = (
+            f"👤 **New user started bot**\n"
+            f"Name: {user_link}\n"
+            f"Username: {username_display}\n"
+            f"ID: `{user_id}`"
+        )
         for admin_id in get_all_admins():
             try:
-                await bot.send_message(admin_id, admin_message)
+                await bot.send_message(admin_id, admin_message, parse_mode="markdown")
             except Exception:
                 pass
 
@@ -1110,7 +1116,7 @@ async def start(m: UpdateNewMessage):
             hours = (rem % 86400) // 3600
             remaining = f" ({days}d {hours}h left)"
 
-    text = WELCOME_TEXT.format(name=name)
+    text = WELCOME_TEXT.format(name=name, free_limit=FREE_DOWNLOAD_LIMIT)
 
     buttons = _main_menu_buttons(user_id)
 
@@ -1402,7 +1408,7 @@ async def cb_setlang(e):
     await e.answer(f"Language set to {lang_name}!", alert=False)
     # Refresh main menu
     user = await bot.get_entity(e.sender_id)
-    text = WELCOME_TEXT.format(name=user.first_name)
+    text = WELCOME_TEXT.format(name=user.first_name, free_limit=FREE_DOWNLOAD_LIMIT)
     buttons = _main_menu_buttons(e.sender_id)
     if is_admin(e.sender_id):
         buttons.insert(2, [Button.inline("⚙️ Admin Panel", data="menu_admin")])
@@ -1412,7 +1418,7 @@ async def cb_setlang(e):
 @bot.on(events.CallbackQuery(data=b"menu_main"))
 async def cb_main(e):
     user = await bot.get_entity(e.sender_id)
-    text = WELCOME_TEXT.format(name=user.first_name)
+    text = WELCOME_TEXT.format(name=user.first_name, free_limit=FREE_DOWNLOAD_LIMIT)
     buttons = _main_menu_buttons(e.sender_id)
     await e.edit(text, parse_mode="markdown", buttons=buttons)
 
@@ -2160,15 +2166,18 @@ async def handle_message(m: Message):
 
     count = db.get(f"check_{m.sender_id}")
 
-    # Free user rate limit: 10 downloads per hour
-    if not is_premium and not is_admin(m.sender_id):
-        if count and int(count) >= 10:
+    # Free user rate limit (configurable)
+    # Owner and premium/admins bypass all limits
+    is_owner = (m.sender_id == OWNER_ID)
+    if not is_premium and not is_admin(m.sender_id) and not is_owner:
+        # Check for custom user limit
+        custom_limit = db.get(f"user_limit:{m.sender_id}")
+        free_limit = int(custom_limit) if custom_limit else FREE_DOWNLOAD_LIMIT
+        if count and int(count) >= free_limit:
             ttl = db.ttl(f"check_{m.sender_id}")
             ttl_text = convert_seconds(ttl) if ttl and ttl > 0 else "1 hour"
             return await hm.edit(
-                f"You've reached your limit (10 videos/hour).\n"
-                f"Try again in **{ttl_text}**.\n"
-                f"Upgrade to **Premium** for unlimited downloads."
+                t(m.sender_id, "rate_limit", limit=free_limit, time=ttl_text)
             )
 
     shorturl = extract_code_from_url(url)
@@ -2181,20 +2190,24 @@ async def handle_message(m: Message):
         from utils.errors import send_user_error as _sue
         return await _sue(hm, "api_unavailable", via="edit")
 
-    # Max files per request check
-    if len(files) > MAX_FILES_PER_REQUEST and not is_premium:
+    # Max files per request check (configurable)
+    max_files = MAX_FILES_PER_REQUEST
+    if len(files) > max_files and not is_premium and not is_owner:
         return await hm.edit(
             f"⚠️ This link has **{len(files)} files**.\n"
-            f"Free users can download max **{MAX_FILES_PER_REQUEST}** files.\n"
+            f"Free users can download max **{max_files}** files.\n"
             f"Upgrade to **Premium** for unlimited."
         )
 
-    # Set cooldown after successful API call (skip for premium/admin)
-    if not is_premium and not is_admin(m.sender_id):
+    # Set cooldown after successful API call (skip for premium/admin/owner)
+    if not is_premium and not is_admin(m.sender_id) and not is_owner:
         set_cooldown(m.sender_id)
 
-    # Premium users get all files, free users get only the first one
-    files_to_process = files if is_premium else files[:1]
+    # Premium users get all files, free users get only the first one (owner gets all)
+    if is_premium or is_owner:
+        files_to_process = files
+    else:
+        files_to_process = files[:1]
     total = len(files_to_process)
 
     # Cached forwarding — only for single-file links
@@ -3461,7 +3474,7 @@ LANG_MESSAGES = {
         "upload_fail": "Upload Failed but you can download it from {link}.",
         "unsupported": "File type `{ext}` is not supported.\nSupported: {formats}",
         "too_big": "Sorry! File is too big. I can download only 500MB and this file is of {size}.",
-        "rate_limit": "You've reached your limit (10 videos/hour).\nTry again in {time}.\nUpgrade to Premium for unlimited downloads.",
+        "rate_limit": "You've reached your limit ({limit} downloads/hour).\nTry again in {time}.\nUpgrade to Premium for unlimited downloads.",
         "join_required": "Please join {chat} then send me the link again.",
         "invalid_link": "Seems like your link is invalid.",
         "api_error": "Sorry! API is dead or maybe your link is broken.",
@@ -3481,7 +3494,7 @@ LANG_MESSAGES = {
         "upload_fail": "अपलोड असफल तर तपाईंले यहाँबाट डाउनलोड गर्न सक्नुहुन्छ: {link}",
         "unsupported": "फाइल प्रकार `{ext}` समर्थित छैन।\nसमर्थित: {formats}",
         "too_big": "खेद छ! फाइल धेरै ठूलो छ। मैले 500MB सम्म मात्र डाउनलोड गर्न सक्छु र यो फाइल {size} को छ।",
-        "rate_limit": "तपाईंको सीमा पुग्यो (१० भिडियो/घण्टा)।\n{time} मा फेरि प्रयास गर्नुहोस्।\nअसीमित डाउनलोडको लागि Premium मा अपग्रेड गर्नुहोस्।",
+        "rate_limit": "तपाईंको सीमा पुग्यो ({limit} भिडियो/घण्टा)।\n{time} मा फेरि प्रयास गर्नुहोस्।\nअसीमित डाउनलोडको लागि Premium मा अपग्रेड गर्नुहोस्।",
         "join_required": "कृपया {chat} मा सामेल हुनुहोस् र फेरि लिङ्क पठाउनुहोस्।",
         "invalid_link": "तपाईंको लिङ्क अमान्य जस्तो देखिन्छ।",
         "api_error": "खेद छ! API मृत छ वा तपाईंको लिङ्क टुटेको छ।",
@@ -3501,7 +3514,7 @@ LANG_MESSAGES = {
         "upload_fail": "अपलोड विफल लेकिन आप यहां से डाउनलोड कर सकते हैं: {link}",
         "unsupported": "फाइल प्रकार `{ext}` समर्थित नहीं है।\nसमर्थित: {formats}",
         "too_big": "माफ़ करें! फाइल बहुत बड़ी है। मैं केवल 500MB तक डाउनलोड कर सकता हूं और यह फाइल {size} की है।",
-        "rate_limit": "आपकी सीमा पूरी हो गई (10 वीडियो/घंटा)।\n{time} में फिर से प्रयास करें।\nअसीमित डाउनलोड के लिए Premium में अपग्रेड करें।",
+        "rate_limit": "आपकी सीमा पूरी हो गई ({limit} वीडियो/घंटा)।\n{time} में फिर से प्रयास करें।\nअसीमित डाउनलोड के लिए Premium में अपग्रेड करें।",
         "join_required": "कृपया {chat} में शामिल हों और फिर लिंक भेजें।",
         "invalid_link": "आपका लिंक अमान्य लगता है।",
         "api_error": "माफ़ करें! API डेड है या आपका लिंक टूटा है।",
@@ -4132,6 +4145,8 @@ async def view_audit_log(m: UpdateNewMessage):
 async def set_max_files(m: UpdateNewMessage):
     global MAX_FILES_PER_REQUEST
     MAX_FILES_PER_REQUEST = int(m.pattern_match.group(1))
+    import config
+    config.MAX_FILES_PER_REQUEST = MAX_FILES_PER_REQUEST
     log_audit("SET_MAX_FILES", m.sender_id, f"Set to {MAX_FILES_PER_REQUEST}")
     await m.reply(f"✅ Max files per request set to **{MAX_FILES_PER_REQUEST}**.")
 
@@ -4149,8 +4164,62 @@ async def set_max_files(m: UpdateNewMessage):
 async def set_cooldown_timer(m: UpdateNewMessage):
     global DOWNLOAD_COOLDOWN_SECONDS
     DOWNLOAD_COOLDOWN_SECONDS = int(m.pattern_match.group(1))
+    import config
+    config.DOWNLOAD_COOLDOWN_SECONDS = DOWNLOAD_COOLDOWN_SECONDS
     log_audit("SET_COOLDOWN", m.sender_id, f"Set to {DOWNLOAD_COOLDOWN_SECONDS}s")
     await m.reply(f"✅ Download cooldown set to **{DOWNLOAD_COOLDOWN_SECONDS} seconds**.")
+
+
+# ==================== /setlimit — SET DOWNLOAD LIMITS ====================
+
+@bot.on(
+    events.NewMessage(
+        pattern=r"/setlimit\s+(free|premium)\s+(\d+)",
+        incoming=True,
+        outgoing=False,
+        from_users=[OWNER_ID],
+    )
+)
+async def set_download_limit(m: UpdateNewMessage):
+    import config
+    limit_type = m.pattern_match.group(1)
+    limit_val = int(m.pattern_match.group(2))
+    if limit_type == "free":
+        global FREE_DOWNLOAD_LIMIT
+        FREE_DOWNLOAD_LIMIT = limit_val
+        config.FREE_DOWNLOAD_LIMIT = limit_val
+        log_audit("SET_FREE_LIMIT", m.sender_id, f"Set to {limit_val}")
+        await m.reply(f"✅ Free user download limit set to **{limit_val}** downloads/hour.")
+    elif limit_type == "premium":
+        global PREMIUM_DOWNLOAD_LIMIT
+        PREMIUM_DOWNLOAD_LIMIT = limit_val
+        config.PREMIUM_DOWNLOAD_LIMIT = limit_val
+        log_audit("SET_PREMIUM_LIMIT", m.sender_id, f"Set to {limit_val}")
+        if limit_val == 0:
+            await m.reply("✅ Premium user download limit set to **unlimited**.")
+        else:
+            await m.reply(f"✅ Premium user download limit set to **{limit_val}** downloads/hour.")
+
+
+# ==================== /userlimit — SET CUSTOM USER LIMIT ====================
+
+@bot.on(
+    events.NewMessage(
+        pattern=r"/userlimit\s+(\d+)\s+(\d+)",
+        incoming=True,
+        outgoing=False,
+        from_users=[OWNER_ID],
+    )
+)
+async def set_user_limit(m: UpdateNewMessage):
+    user_id = int(m.pattern_match.group(1))
+    limit_val = int(m.pattern_match.group(2))
+    db.set(f"user_limit:{user_id}", limit_val)
+    log_audit("SET_USER_LIMIT", m.sender_id, f"User {user_id} -> {limit_val}")
+    if limit_val == 0:
+        await m.reply(f"✅ User `{user_id}` download limit set to **unlimited**.")
+    else:
+        await m.reply(f"✅ User `{user_id}` download limit set to **{limit_val}** downloads/hour.")
 
 
 # ==================== /addadmin — ADD NEW ADMIN ====================
