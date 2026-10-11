@@ -2099,10 +2099,15 @@ async def process_next_in_queue(bot, db, user_id):
         return
     # Notify user
     try:
+        label = next_item.get('label', 'Download')
+        pos = next_item.get('position')
+        if pos is not None:
+            msg_text = f"▶️ **Starting queued download** ({label})\nPosition was: {pos}"
+        else:
+            msg_text = f"▶️ **Starting queued download** ({label})"
         await bot.send_message(
             user_id,
-            f"▶️ **Starting queued download** ({next_item.get('label', 'Download')})\n"
-            f"Position was: {next_item.get('position', '?')}",
+            msg_text,
             parse_mode="markdown",
         )
     except Exception:
