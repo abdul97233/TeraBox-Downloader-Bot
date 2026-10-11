@@ -3424,6 +3424,7 @@ async def admin_commands(m: UpdateNewMessage):
 /maxfiles `<number>` — Set max files per request
 /setcooldown `<seconds>` — Set download cooldown
 /userlimit `<user_id>` `<n>` — Custom user limit (0 = unlimited)
+/showlimit `[user_id]` — Show current limits (or specific user)
 /setapi `<primary|fallback>` `<template>` — Rotate API live
 /reloadconfig — Reload API templates
 /backup — Full Redis snapshot
@@ -3468,6 +3469,7 @@ async def admin_commands(m: UpdateNewMessage):
 /setcooldown `<seconds>` — Set download cooldown
 /setlimit `free|premium` `<n>` — Set download limits
 /userlimit `<user_id>` `<n>` — Custom user limit (0 = unlimited)
+/showlimit `[user_id]` — Show current limits (or specific user)
 /config_backup — Send config.py to bot
 /set_config — Restore config.py (reply to file)
 
@@ -4325,6 +4327,62 @@ async def set_user_limit(m: UpdateNewMessage):
         await m.reply(f"✅ User `{user_id}` download limit set to **unlimited**.")
     else:
         await m.reply(f"✅ User `{user_id}` download limit set to **{limit_val}** downloads/hour.")
+
+
+# ==================== /showlimit — SHOW CURRENT LIMITS ====================
+
+@bot.on(
+    events.NewMessage(
+        pattern=r"^/showlimit(?:\s+(\d+))?$",
+        incoming=True,
+        outgoing=False,
+        from_users=[OWNER_ID],
+    )
+)
+async def show_limit(m: UpdateNewMessage):
+    """Show current limit settings. Owner only."""
+    args = (m.pattern_match.group(1) or "").strip()
+    
+    if args:
+        # Show specific user's custom limit
+        target_id = int(args)
+        custom = db.get(f"user_limit:{target_id}")
+        is_prem = is_premium_user(target_id)
+        text = (
+            f"📊 **Limit Info for `{target_id}`**\n\n"
+            f"Premium: **{'Yes' if is_prem else 'No'}**\n"
+            f"Custom limit: **{custom or 'None (uses default)'}**\n"
+            f"Effective limit: **{custom if custom else (0 if is_prem else FREE_DOWNLOAD_LIMIT)}** downloads/hour"
+        )
+    else:
+        # Show global settings
+        text = (
+            f"📊 **Current Limit Settings**\n\n"
+            f"**Global Defaults:**\n"
+            f"Free users: **{FREE_DOWNLOAD_LIMIT}** downloads/hour\n"
+            f"Premium users: **{'Unlimited' if PREMIUM_DOWNLOAD_LIMIT == 0 else str(PREMIUM_DOWNLOAD_LIMIT)}**\n"
+            f"Max files per link (free): **{MAX_FILES_PER_REQUEST}**\n"
+            f"Download cooldown: **{DOWNLOAD_COOLDOWN_SECONDS}s**\n\n"
+            f"**Custom User Limits:**\n"
+        )
+        # List users with custom limits
+        try:
+            # Scan for user_limit keys
+            custom_users = []
+            for key in db.scan_iter("user_limit:*"):
+                uid = key.decode().split(":")[1]
+                val = db.get(key)
+                custom_users.append(f"`{uid}` → **{val}**/hour")
+            if custom_users:
+                text += "\n".join(custom_users[:20])
+                if len(custom_users) > 20:
+                    text += f"\n... and {len(custom_users) - 20} more"
+            else:
+                text += "None set"
+        except Exception:
+            text += "Unable to fetch (Redis scan error)"
+    
+    await m.reply(text, parse_mode="markdown")
 
 
 # ==================== /addadmin — ADD NEW ADMIN ====================
