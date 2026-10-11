@@ -52,6 +52,12 @@ Forwards to you instantly
 - Cache system — instantly re-sends previously downloaded files
 - Searchable library — `/search <query>` to find past downloads
 
+### 🔑 Get Free TeraBox API
+- **Source:** [ntmterabox.me](https://ntmterabox.me/) — Message **@ntmteraapi** on Telegram
+- **How:** Pick a plan → get `token_id.secret` → add to `API_ENDPOINTS` in config.py
+- **Format:** `{"name": "api-1", "url": "https://your-domain.ntmterabox.me/", "token": "token_id.secret"}`
+- Free tier: 100K requests/30 days; Pro: 500K; Custom for bots
+
 ### Premium System
 - Time-based expiry (1d, 2d, 3d, 7d, 1w, 1m, unlimited)
 - Gift card system with duration and auto-redeem buttons
@@ -311,10 +317,11 @@ FORCE_CHANNELS = ["@your_channel"]
 FORCE_GROUPS = ["@your_group"]
 
 # TeraBox API — load-balanced across all endpoints
-# Add more endpoints here. No code changes needed.
+# Get free API from https://ntmterabox.me/ (Message @ntmteraapi)
+# Format: {"name": "api-1", "url": "https://your-domain.ntmterabox.me/", "token": "token_id.secret"}
 API_ENDPOINTS = [
-    {"name": "api-1", "url": "https://your-primary-api.com/", "token": "your_token"},
-    {"name": "api-2", "url": "https://your-secondary-api.com/", "token": "your_token"},
+    {"name": "api-1", "url": "https://your-api.ntmterabox.me/", "token": "your_token_id.secret"},
+    {"name": "api-2", "url": "https://your-api2.ntmterabox.me/", "token": "your_token_id.secret"},
 ]
 
 # Self-hosted Bot API (2GB uploads)
