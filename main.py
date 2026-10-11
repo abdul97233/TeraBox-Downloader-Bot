@@ -23,6 +23,16 @@ from utils.jobs import (
 )
 from config import *
 from terabox import get_files, get_fallback_files
+
+# Fallback defaults if config.py is missing new variables
+if "FREE_DOWNLOAD_LIMIT" not in globals():
+    FREE_DOWNLOAD_LIMIT = 10
+if "PREMIUM_DOWNLOAD_LIMIT" not in globals():
+    PREMIUM_DOWNLOAD_LIMIT = 0
+if "MAX_FILES_PER_REQUEST" not in globals():
+    MAX_FILES_PER_REQUEST = 10
+if "DOWNLOAD_COOLDOWN_SECONDS" not in globals():
+    DOWNLOAD_COOLDOWN_SECONDS = 10
 from tools import (
     add_watermark,
     bytesio_from_file,
