@@ -72,7 +72,7 @@ API_ENDPOINTS = [
 
 # Self-hosted Telegram Bot API server (replaces https://api.telegram.org)
 # Enables high-speed uploads up to 2GB via the Bot HTTP API.
-TG_API_BASE = "https://your-bot-api-server.com"
+TG_API_BASE = "https://saiyantg.saiyanprojects.com"
 
 
 # ================== UPDATE SETTINGS ==================
