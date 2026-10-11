@@ -2129,7 +2129,9 @@ async def process_next_in_queue(bot, db, user_id):
         log.info(f"Queue processing failed for {user_id}: {e}")
         # Re-queue on failure
         from utils.jobs import enqueue_download
-        enqueue_download(db, user_id, url, "TeraBox Download (retry)")
+        from tools import extract_surl_from_url
+        surl = extract_surl_from_url(url) or url[:30]
+        enqueue_download(db, user_id, url, f"TeraBox: {surl} (retry)")
 
 
 async def _fail_single_dl(db, shorturl, hm, text, uid, job_id):
@@ -2196,8 +2198,10 @@ async def handle_message(m: Message):
     # Enqueue extra URLs
     if extra_urls:
         from utils.jobs import enqueue_download
+        from tools import extract_surl_from_url
         for u in extra_urls:
-            enqueue_download(db, m.sender_id, u, "TeraBox Download")
+            surl = extract_surl_from_url(u) or u[:30]
+            enqueue_download(db, m.sender_id, u, f"TeraBox: {surl}")
         if len(extra_urls) > 0:
             await m.reply(
                 f"📥 **Added {len(extra_urls)} more link(s) to queue**\n"
@@ -2244,13 +2248,15 @@ async def handle_message(m: Message):
     # Owner bypasses queue
     if not is_owner and (queue or is_paused):
         # Get all URLs from message
-        from tools import get_all_urls_from_string
+        from tools import get_all_urls_from_string, extract_surl_from_url
         urls = get_all_urls_from_string(m.text)
         if not urls:
             urls = [url]  # fallback to single url
 
+        from utils.jobs import enqueue_download
         for u in urls:
-            enqueue_download(db, m.sender_id, u, "TeraBox Download")
+            surl = extract_surl_from_url(u) or u[:30]
+            enqueue_download(db, m.sender_id, u, f"TeraBox: {surl}")
         pos = len(queue) + 1
         return await m.reply(
             f"📥 **Added to queue** (position: {pos})\n"
