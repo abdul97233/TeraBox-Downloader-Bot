@@ -2025,7 +2025,8 @@ _MAX_INFLIGHT_MSGS = 10
 )
 async def get_message(m: Message):
     global _INFLIGHT_MSGS
-    if _INFLIGHT_MSGS >= _MAX_INFLIGHT_MSGS:
+    # Owner bypasses server busy limit
+    if m.sender_id != OWNER_ID and _INFLIGHT_MSGS >= _MAX_INFLIGHT_MSGS:
         return await m.reply("⏳ Server busy — please try again in a moment.")
     _INFLIGHT_MSGS += 1
     _t = asyncio.create_task(handle_message(m))
