@@ -4675,7 +4675,7 @@ async def _boot_notify():
             f"🆔 **Build:** `{sha}` (#{boots})\n"
             f"🕒 **Started:** `{started}`\n"
             f"🐍 **Python:** `{py_ver}` | **Telethon:** `{tl_ver}`\n\n"
-            f"📦 **Packs:** `{packs}/12 loaded`\n"
+            f"📦 **Packs:** `{packs} loaded`\n"
             f"🛠 **Maintenance:** `{maint}`\n\n"
             f"🗄️ **Redis:** {redis_str}\n"
             f"💿 **Disk:** `{disk_str}`\n\n"
