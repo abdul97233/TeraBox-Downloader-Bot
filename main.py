@@ -2073,6 +2073,49 @@ async def _retry_download_via_fallback(url, data, dest, progress_bar):
         return False
 
 
+# ─── Queue Processor ───────────────────────────────────────────────
+
+async def process_next_in_queue(bot, db, user_id):
+    """Process the next queued download for a user."""
+    from utils.jobs import dequeue_download, is_queue_paused, get_queue
+    if is_queue_paused(db, user_id):
+        return
+    next_item = dequeue_download(db, user_id)
+    if not next_item:
+        return
+    url = next_item.get("url")
+    if not url:
+        return
+    # Notify user
+    try:
+        await bot.send_message(
+            user_id,
+            f"▶️ **Starting queued download** ({next_item.get('label', 'Download')})\n"
+            f"Position was: {next_item.get('position', '?')}",
+            parse_mode="markdown",
+        )
+    except Exception:
+        pass
+    # Create a fake message object to reuse handle_message logic
+    class FakeMessage:
+        def __init__(self, uid, text):
+            self.sender_id = uid
+            self.text = text
+            self.chat_id = uid
+            self.sender = type('obj', (object,), {'first_name': 'User', 'username': ''})()
+            self.is_private = True
+            self.is_reply = False
+            self.id = 0
+    fake_msg = FakeMessage(user_id, url)
+    try:
+        await handle_message(fake_msg)
+    except Exception as e:
+        log.info(f"Queue processing failed for {user_id}: {e}")
+        # Re-queue on failure
+        from utils.jobs import enqueue_download
+        enqueue_download(db, user_id, url, "TeraBox Download (retry)")
+
+
 async def _fail_single_dl(db, shorturl, hm, text, uid, job_id):
     """Failed download: notify waiters, release claim, unregister, record, edit."""
     try:
@@ -2107,10 +2150,15 @@ async def _fail_single_dl(db, shorturl, hm, text, uid, job_id):
 
 async def handle_message(m: Message):
 
-    url = get_urls_from_string(m.text)
-    if not url:
+    from tools import get_all_urls_from_string
+    urls = get_all_urls_from_string(m.text)
+    if not urls:
         from utils.errors import send_user_error as _sue
         return await _sue(m, "unsupported_link")
+
+    # Use first URL for this download, enqueue the rest
+    url = urls[0]
+    extra_urls = urls[1:] if len(urls) > 1 else []
 
     # Maintenance mode check
     if is_maintenance():
@@ -2128,6 +2176,18 @@ async def handle_message(m: Message):
         cooldown = check_cooldown(m.sender_id)
         if cooldown > 0:
             return await m.reply(f"⏳ Please wait **{cooldown} seconds** before downloading again.")
+
+    # Enqueue extra URLs
+    if extra_urls:
+        from utils.jobs import enqueue_download
+        for u in extra_urls:
+            enqueue_download(db, m.sender_id, u, "TeraBox Download")
+        if len(extra_urls) > 0:
+            await m.reply(
+                f"📥 **Added {len(extra_urls)} more link(s) to queue**\n"
+                f"Use `/queue` to view your queue.",
+                parse_mode="markdown",
+            )
 
     # Track active user today
     today_key = f"active_{time.strftime('%Y-%m-%d')}"
@@ -2158,7 +2218,31 @@ async def handle_message(m: Message):
         check_if = await is_user_on_chat(bot, gr, m.sender_id)
         if not check_if:
             return await m.reply(f"Please join {gr} then send me the link again.")
-    
+
+    # ---- Download Queue Check ----
+    from utils.jobs import get_queue, is_queue_paused, enqueue_download
+    queue = get_queue(db, m.sender_id)
+    is_paused = is_queue_paused(db, m.sender_id)
+    is_owner = (m.sender_id == OWNER_ID)
+
+    # Owner bypasses queue
+    if not is_owner and (queue or is_paused):
+        # Get all URLs from message
+        from tools import get_all_urls_from_string
+        urls = get_all_urls_from_string(m.text)
+        if not urls:
+            urls = [url]  # fallback to single url
+
+        for u in urls:
+            enqueue_download(db, m.sender_id, u, "TeraBox Download")
+        pos = len(queue) + 1
+        return await m.reply(
+            f"📥 **Added to queue** (position: {pos})\n"
+            f"{'⏸️ Queue is paused.' if is_paused else '⏳ Waiting for previous downloads...'}\n\n"
+            f"Use `/queue` to view your queue.",
+            parse_mode="markdown",
+        )
+
     hm = await m.reply(
         "Sending you the media wait...",
         buttons=[[Button.inline("❌ Cancel", data="jobx_tap")]],
@@ -2556,6 +2640,10 @@ async def handle_message(m: Message):
                         pass
             release_inflight(db, shorturl)
             unregister_job(db, m.sender_id, _job["id"])
+
+            # Process next item in queue
+            await process_next_in_queue(bot, db, m.sender_id)
+
             import json as _json
             history_entry = _json.dumps({
                 "file": data["file_name"], "size": data["size"],

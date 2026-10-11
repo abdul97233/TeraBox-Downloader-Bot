@@ -316,3 +316,134 @@ def pop_waiters(db, shorturl):
         except Exception:
             pass
     return out
+
+
+# ---- Download Queue System ----
+
+QUEUE_KEY = "download_queue"
+QUEUE_POSITION_KEY = "queue:position"  # user_id -> position
+
+def enqueue_download(db, user_id, url, label="Download"):
+    """Add a download to the user's queue. Returns queue position (1-based)."""
+    try:
+        user_id = int(user_id)
+        job_id = _uuid.uuid4().hex[:12]
+        queue_item = _json.dumps({
+            "job_id": job_id,
+            "user_id": user_id,
+            "url": url,
+            "label": label,
+            "status": "pending",
+            "added": _time.time(),
+        })
+        # Add to user's queue (list)
+        pos = db.rpush(f"queue:user:{user_id}", queue_item)
+        # Also add to global queue for admin view
+        db.zadd(QUEUE_KEY, {queue_item: _time.time()})
+        return pos
+    except Exception:
+        return 0
+
+def dequeue_download(db, user_id):
+    """Remove and return the next pending download for user."""
+    try:
+        item = db.lpop(f"queue:user:{user_id}")
+        if item:
+            # Remove from global queue
+            db.zrem(QUEUE_KEY, item)
+            return _json.loads(item)
+        return None
+    except Exception:
+        return None
+
+def get_queue(db, user_id):
+    """Get all items in user's queue."""
+    try:
+        items = db.lrange(f"queue:user:{user_id}", 0, -1) or []
+        queue = []
+        for i, item in enumerate(items):
+            try:
+                q = _json.loads(item)
+                q["position"] = i + 1
+                queue.append(q)
+            except Exception:
+                pass
+        return queue
+    except Exception:
+        return []
+
+def get_queue_position(db, user_id):
+    """Get current position of user's active download (0 if none)."""
+    try:
+        queue = get_queue(db, user_id)
+        return len(queue)
+    except Exception:
+        return 0
+
+def pause_queue(db, user_id):
+    """Pause queue by setting a flag."""
+    try:
+        db.set(f"queue:paused:{user_id}", "1", ex=86400)
+        return True
+    except Exception:
+        return False
+
+def resume_queue(db, user_id):
+    """Resume queue by removing pause flag."""
+    try:
+        db.delete(f"queue:paused:{user_id}")
+        return True
+    except Exception:
+        return False
+
+def is_queue_paused(db, user_id):
+    """Check if queue is paused."""
+    try:
+        return bool(db.get(f"queue:paused:{user_id}"))
+    except Exception:
+        return False
+
+def remove_from_queue(db, user_id, job_id):
+    """Remove a specific job from queue by job_id."""
+    try:
+        items = db.lrange(f"queue:user:{user_id}", 0, -1) or []
+        for item in items:
+            try:
+                q = _json.loads(item)
+                if q.get("job_id") == job_id:
+                    db.lrem(f"queue:user:{user_id}", 1, item)
+                    db.zrem(QUEUE_KEY, item)
+                    return True
+            except Exception:
+                pass
+        return False
+    except Exception:
+        return False
+
+def clear_queue(db, user_id):
+    """Clear all items from user's queue."""
+    try:
+        items = db.lrange(f"queue:user:{user_id}", 0, -1) or []
+        for item in items:
+            db.zrem(QUEUE_KEY, item)
+        db.delete(f"queue:user:{user_id}")
+        return True
+    except Exception:
+        return False
+
+def get_global_queue_stats(db):
+    """Get global queue statistics for admin dashboard."""
+    try:
+        total = db.zcard(QUEUE_KEY)
+        # Get unique users in queue
+        users = set()
+        items = db.zrange(QUEUE_KEY, 0, -1) or []
+        for item in items:
+            try:
+                q = _json.loads(item)
+                users.add(q.get("user_id"))
+            except Exception:
+                pass
+        return {"total_queued": total, "users_waiting": len(users)}
+    except Exception:
+        return {"total_queued": 0, "users_waiting": 0}

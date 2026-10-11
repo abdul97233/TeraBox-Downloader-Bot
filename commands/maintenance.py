@@ -378,3 +378,72 @@ def register(bot, ctx):
         except Exception:
             pass
         await m.reply(build_config_reload_text(new_values if isinstance(new_values, dict) else {}))
+
+    # ─── /queue — DOWNLOAD QUEUE ──────────────────────────────────
+    @bot.on(events.NewMessage(pattern=r"^/queue(?:\s+(.*))?$"))
+    async def _queue(m):
+        if not is_admin(m.sender_id):
+            return await _deny(m)
+
+        args = (m.pattern_match.group(1) or "").strip().split()
+        if not args:
+            # Show own queue
+            uid = m.sender_id
+            from utils.jobs import get_queue, is_queue_paused
+            queue = get_queue(db, uid)
+            paused = is_queue_paused(db, uid)
+            if not queue:
+                return await m.reply("📭 Your download queue is empty.")
+            lines = [f"📥 **Your Download Queue** {'⏸️ Paused' if paused else ''}", ""]
+            for item in queue:
+                pos = item.get("position", "?")
+                label = item.get("label", "Download")
+                status = item.get("status", "pending")
+                lines.append(f"`{pos}.` **{label}** — `{status}`")
+            lines.append(f"\nTotal: **{len(queue)}** pending")
+            return await m.reply("\n".join(lines), parse_mode="markdown")
+
+        action = args[0].lower()
+
+        if action == "pause":
+            from utils.jobs import pause_queue
+            pause_queue(db, m.sender_id)
+            return await m.reply("⏸️ Download queue **paused**. New downloads will wait.")
+
+        if action == "resume":
+            from utils.jobs import resume_queue
+            resume_queue(db, m.sender_id)
+            return await m.reply("▶️ Download queue **resumed**.")
+
+        if action == "clear":
+            from utils.jobs import clear_queue
+            clear_queue(db, m.sender_id)
+            return await m.reply("🗑️ Download queue **cleared**.")
+
+        if action == "remove":
+            if len(args) < 2:
+                return await m.reply("Usage: `/queue remove <job_id>`")
+            from utils.jobs import remove_from_queue
+            ok = remove_from_queue(db, m.sender_id, args[1])
+            return await m.reply("✅ Removed." if ok else "❌ Job not found.")
+
+        if action == "stats":
+            from utils.jobs import get_global_queue_stats
+            stats = get_global_queue_stats(db)
+            return await m.reply(
+                f"📊 **Global Queue Stats**\n"
+                f"Total queued: **{stats['total_queued']}**\n"
+                f"Users waiting: **{stats['users_waiting']}**",
+                parse_mode="markdown",
+            )
+
+        await m.reply(
+            "**Queue Commands:**\n"
+            "`/queue` — Show your queue\n"
+            "`/queue pause` — Pause queue\n"
+            "`/queue resume` — Resume queue\n"
+            "`/queue clear` — Clear queue\n"
+            "`/queue remove <job_id>` — Remove specific job\n"
+            "`/queue stats` — Global queue stats (admin)",
+            parse_mode="markdown",
+        )
