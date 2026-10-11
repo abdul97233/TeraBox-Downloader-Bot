@@ -3322,7 +3322,10 @@ async def admin_commands(m: UpdateNewMessage):
 /configview — View runtime config
 /configset `<KEY>` `<VALUE>` — Edit runtime config
 /configreset `<KEY>` — Reset key to default
-/configreset `<KEY>` — Reset key to default
+/setlimit `free|premium` `<n>` — Set download limit
+/maxfiles `<number>` — Set max files per request
+/setcooldown `<seconds>` — Set download cooldown
+/userlimit `<user_id>` `<n>` — Custom user limit (0 = unlimited)
 /setapi `<primary|fallback>` `<template>` — Rotate API live
 /reloadconfig — Reload API templates
 /backup — Full Redis snapshot
@@ -3365,6 +3368,10 @@ async def admin_commands(m: UpdateNewMessage):
 /auditlog `[count]` — View admin action log
 /maxfiles `<number>` — Set max files per request
 /setcooldown `<seconds>` — Set download cooldown
+/setlimit `free|premium` `<n>` — Set download limits
+/userlimit `<user_id>` `<n>` — Custom user limit (0 = unlimited)
+/config_backup — Send config.py to bot
+/set_config — Restore config.py (reply to file)
 
 **── Admin Management (Owner) ──**
 /addadmin `<user_id>` — Add new admin
