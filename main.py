@@ -2652,6 +2652,12 @@ async def handle_message(m: Message):
                         db.set(shorturl, _json.dumps({"ids": [sent_id], "url": url}))
                 else:
                     db.set(shorturl, _json.dumps({"ids": [sent_id], "url": url}))
+
+            # Add to cached videos index for /vd command
+            try:
+                db.sadd("cached_videos", shorturl)
+            except Exception:
+                pass
             try:
                 if callable(globals().get("_lib_index")):
                     globals()["_lib_index"](db, sent_id, data["file_name"],
@@ -2915,6 +2921,11 @@ async def handle_message(m: Message):
                                 db.set(shorturl, _json.dumps({"ids": [sent_id], "url": url}))
                         else:
                             db.set(shorturl, _json.dumps({"ids": [sent_id], "url": url}))
+                    # Add to cached videos index
+                    try:
+                        db.sadd("cached_videos", shorturl)
+                    except Exception:
+                        pass
                     try:
                         if callable(globals().get("_lib_index")):
                             globals()["_lib_index"](db, sent_id, data["file_name"],
@@ -3368,45 +3379,39 @@ async def random_video_from_cache(m: UpdateNewMessage):
         return await m.reply("❌ Maximum 50 videos at once.")
     
     try:
-        # Get all cached keys
-        keys = []
-        for key in db.scan_iter("*"):
-            k = key if isinstance(key, str) else key.decode()
-            # Skip system keys
-            if k.startswith(("user_limit:", "check_", "dl:", "queue:", "queue:paused:", "active_", "member_since:", "all_known_users", "stats:", "history_", "user_stats_", "api_template:", "api_endpoints", "boot_notify", "user_lang", "custom_tags", "gc_", "referral_", "referral_code:", "referral_used:", "premium_", "banned_", "maintenance")):
-                continue
-            # Only process string keys (skip hashes, sets, lists, etc.)
-            try:
-                if db.type(key) != b"string" and db.type(key) != "string":
-                    continue
-            except Exception:
-                continue
-            # Check if it's a video cache entry (has 'ids' and 'url' in JSON)
-            val = db.get(key)
-            if val:
-                v = val if isinstance(val, str) else val.decode()
-                try:
-                    import json as _json
-                    data = _json.loads(v)
-                    if isinstance(data, dict) and "ids" in data and "url" in data:
-                        keys.append((key, data))
-                except Exception:
-                    pass
+        # Get cached video keys from dedicated set (fast!)
+        try:
+            cached_keys = db.smembers("cached_videos")
+            if not cached_keys:
+                return await m.reply("❌ No cached videos found.")
+            # Convert to list and filter to strings
+            key_list = []
+            for k in cached_keys:
+                key = k if isinstance(k, str) else k.decode()
+                key_list.append(key)
+        except Exception:
+            return await m.reply("❌ No cached videos found.")
         
-        if not keys:
+        if not key_list:
             return await m.reply("❌ No cached videos found.")
         
         # Pick random entries
         import random
-        random.shuffle(keys)
-        selected = keys[:count]
+        random.shuffle(key_list)
+        selected_keys = key_list[:count]
         
-        await m.reply(f"🎲 Sending **{len(selected)}** random cached video(s)...")
+        await m.reply(f"🎲 Sending **{len(selected_keys)}** random cached video(s)...")
         
         sent = 0
-        for cache_key, cache_data in selected:
+        for shorturl in selected_keys:
             try:
-                ids = cache_data.get("ids", [])
+                val = db.get(shorturl)
+                if not val:
+                    continue
+                v = val if isinstance(val, str) else val.decode()
+                import json as _json
+                data = _json.loads(v)
+                ids = data.get("ids", [])
                 if not ids:
                     continue
                 cached_msgs = await bot.get_messages(PRIVATE_CHAT_ID, ids=ids)
@@ -3416,14 +3421,14 @@ async def random_video_from_cache(m: UpdateNewMessage):
                 for msg in valid_msgs:
                     await bot.send_message(
                         m.chat.id,
-                        f"🎬 **Random from cache**\nSource: {cache_data.get('url', 'Unknown')}",
+                        f"🎬 **Random from cache**\nSource: {data.get('url', 'Unknown')}",
                         parse_mode="markdown",
                     )
                     await bot.forward_messages(m.chat.id, msg.id, from_peer=PRIVATE_CHAT_ID, drop_author=True)
                     sent += 1
-                    await asyncio.sleep(1)  # Small delay between sends
+                    await asyncio.sleep(1)
             except Exception as e:
-                log.info(f"Cache forward failed for {cache_key}: {e}")
+                log.info(f"Cache forward failed for {shorturl}: {e}")
         
         await m.reply(f"✅ Sent **{sent}** random video(s) from cache.")
         
