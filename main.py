@@ -3394,7 +3394,8 @@ async def random_video_from_cache(m: UpdateNewMessage):
             await m.reply("🔄 Rebuilding cache index from existing entries...")
             key_list = []
             rebuilt = 0
-            # Run rebuild in executor to avoid blocking event loop
+            
+            # Run rebuild in executor with timeout
             def _rebuild():
                 local_keys = []
                 local_rebuilt = 0
@@ -3421,7 +3422,14 @@ async def random_video_from_cache(m: UpdateNewMessage):
                 return local_keys, local_rebuilt
             
             loop = asyncio.get_running_loop()
-            key_list, rebuilt = await loop.run_in_executor(None, _rebuild)
+            import concurrent.futures
+            # Run with 60-second timeout
+            future = loop.run_in_executor(None, _rebuild)
+            try:
+                key_list, rebuilt = await asyncio.wait_for(future, timeout=60.0)
+            except asyncio.TimeoutError:
+                await m.reply("⏰ Rebuild timed out (60s). Try again or check Redis size.")
+                return
             
             if key_list:
                 # Rebuild the set (back on event loop)
