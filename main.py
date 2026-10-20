@@ -3394,29 +3394,37 @@ async def random_video_from_cache(m: UpdateNewMessage):
             await m.reply("🔄 Rebuilding cache index from existing entries...")
             key_list = []
             rebuilt = 0
-            for key in db.scan_iter("*"):
-                k = key if isinstance(key, str) else key.decode()
-                # Skip system keys
-                if k.startswith(("user_limit:", "check_", "dl:", "queue:", "queue:paused:", "active_", "member_since:", "all_known_users", "stats:", "history_", "user_stats_", "api_template:", "api_endpoints", "boot_notify", "user_lang", "custom_tags", "gc_", "referral_", "referral_code:", "referral_used:", "premium_", "banned_", "maintenance")):
-                    continue
-                try:
-                    if db.type(key) != b"string" and db.type(key) != "string":
+            # Run rebuild in executor to avoid blocking event loop
+            def _rebuild():
+                local_keys = []
+                local_rebuilt = 0
+                for key in db.scan_iter("*"):
+                    k = key if isinstance(key, str) else key.decode()
+                    if k.startswith(("user_limit:", "check_", "dl:", "queue:", "queue:paused:", "active_", "member_since:", "all_known_users", "stats:", "history_", "user_stats_", "api_template:", "api_endpoints", "boot_notify", "user_lang", "custom_tags", "gc_", "referral_", "referral_code:", "referral_used:", "premium_", "banned_", "maintenance")):
                         continue
-                except Exception:
-                    continue
-                val = db.get(key)
-                if val:
-                    v = val if isinstance(val, str) else val.decode()
                     try:
-                        import json as _json
-                        data = _json.loads(v)
-                        if isinstance(data, dict) and "ids" in data and "url" in data:
-                            key_list.append(k)
-                            rebuilt += 1
+                        if db.type(key) != b"string" and db.type(key) != "string":
+                            continue
                     except Exception:
-                        pass
+                        continue
+                    val = db.get(key)
+                    if val:
+                        v = val if isinstance(val, str) else val.decode()
+                        try:
+                            import json as _json
+                            data = _json.loads(v)
+                            if isinstance(data, dict) and "ids" in data and "url" in data:
+                                local_keys.append(k)
+                                local_rebuilt += 1
+                        except Exception:
+                            pass
+                return local_keys, local_rebuilt
+            
+            loop = asyncio.get_running_loop()
+            key_list, rebuilt = await loop.run_in_executor(None, _rebuild)
+            
             if key_list:
-                # Rebuild the set
+                # Rebuild the set (back on event loop)
                 try:
                     db.delete("cached_videos")
                     for k in key_list:
