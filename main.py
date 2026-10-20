@@ -3383,14 +3383,47 @@ async def random_video_from_cache(m: UpdateNewMessage):
         try:
             cached_keys = db.smembers("cached_videos")
             if not cached_keys:
-                return await m.reply("❌ No cached videos found.")
+                raise Exception("Set empty, will rebuild")
             # Convert to list and filter to strings
             key_list = []
             for k in cached_keys:
                 key = k if isinstance(k, str) else k.decode()
                 key_list.append(key)
         except Exception:
-            return await m.reply("❌ No cached videos found.")
+            # Fallback: rebuild set from existing cache entries
+            await m.reply("🔄 Rebuilding cache index from existing entries...")
+            key_list = []
+            rebuilt = 0
+            for key in db.scan_iter("*"):
+                k = key if isinstance(key, str) else key.decode()
+                # Skip system keys
+                if k.startswith(("user_limit:", "check_", "dl:", "queue:", "queue:paused:", "active_", "member_since:", "all_known_users", "stats:", "history_", "user_stats_", "api_template:", "api_endpoints", "boot_notify", "user_lang", "custom_tags", "gc_", "referral_", "referral_code:", "referral_used:", "premium_", "banned_", "maintenance")):
+                    continue
+                try:
+                    if db.type(key) != b"string" and db.type(key) != "string":
+                        continue
+                except Exception:
+                    continue
+                val = db.get(key)
+                if val:
+                    v = val if isinstance(val, str) else val.decode()
+                    try:
+                        import json as _json
+                        data = _json.loads(v)
+                        if isinstance(data, dict) and "ids" in data and "url" in data:
+                            key_list.append(k)
+                            rebuilt += 1
+                    except Exception:
+                        pass
+            if key_list:
+                # Rebuild the set
+                try:
+                    db.delete("cached_videos")
+                    for k in key_list:
+                        db.sadd("cached_videos", k)
+                    await m.reply(f"✅ Rebuilt cache index with **{rebuilt}** entries.")
+                except Exception:
+                    pass
         
         if not key_list:
             return await m.reply("❌ No cached videos found.")
