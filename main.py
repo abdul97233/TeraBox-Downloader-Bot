@@ -2337,7 +2337,8 @@ async def handle_message(m: Message):
 ╔══════════⍟
 ╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{caption_name(data['file_name'])}`
 ╟➣𝙎𝙞𝙯𝙚: **{data['size']}**
-╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(m.sender.first_name)}{tag_str}
+╟➣𝗧𝐞𝐫𝐚𝐁𝐨𝐱 𝗟𝗶𝗻𝗸 : [Original Link]({escape_markdown(url).replace(')', '%29')})
+╟➣𝗙𝗶𝗿𝘀𝘁 𝗡𝗮𝗺𝗲: {escape_markdown(m.sender.first_name)}{tag_str}
 ╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(m.sender.username or '-')}
 ╚═════════════════⍟
          @NTMpro
@@ -2530,8 +2531,9 @@ async def handle_message(m: Message):
 ╔══════════⍟
 ╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{caption_name(data['file_name'])}`
 ╟➣𝙎𝙞𝙯𝙚: **{escape_markdown(data['size'])}** 
+╟➣𝗧𝐞𝐫𝐚𝐁𝐨𝐱 𝗟𝗶𝗻𝗸 : [Original Link]({escape_markdown(url).replace(')', '%29')})
 ╟➣𝗗𝗶𝗿𝗲𝗰𝘁 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱 𝗟𝗶𝗻𝗸 : [Click here]({data['direct_link'].replace(')', '%29')})
-╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}{tag_str}
+╟➣𝗙𝗶𝗿𝘀𝘁 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}{tag_str}
 ╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(user_username or '-')}
 ╟➣𝐓𝐨𝐭𝐚𝐥 𝐓𝐢𝐦𝐞 𝐓𝐚𝐤𝐞𝐧: {total_time_str}
 ╚═════════════════⍟
@@ -3224,6 +3226,64 @@ async def force_restart(m: UpdateNewMessage):
     os.execl(sys.executable, sys.executable, *sys.argv)
 
 
+# ==================== /rollback — GIT ROLLBACK (OWNER ONLY) ====================
+
+@bot.on(
+    events.NewMessage(
+        pattern=r"^/rollback(?:\s+(\S+))?$",
+        incoming=True,
+        outgoing=False,
+        from_users=[OWNER_ID],
+    )
+)
+async def rollback_bot(m: UpdateNewMessage):
+    """Rollback bot to a previous commit. Usage: /rollback [commit_hash]"""
+    import subprocess
+    commit = m.pattern_match.group(1)
+    if not commit:
+        # Show last 10 commits for reference
+        try:
+            result = subprocess.run(
+                ["git", "log", "--oneline", "-10"],
+                capture_output=True, text=True, timeout=10, cwd=os.path.dirname(os.path.abspath(__file__))
+            )
+            commits = result.stdout.strip()
+            return await m.reply(
+                f"**Usage:** `/rollback <commit_hash>`\n\n"
+                f"**Recent commits:**\n```\n{commits}\n```\n"
+                f"Use `/rollback <commit_hash>` to rollback to that commit.",
+                parse_mode="markdown",
+            )
+        except Exception as e:
+            return await m.reply(f"Error fetching commits: `{e}`")
+
+    # Perform rollback
+    repo_path = os.path.dirname(os.path.abspath(__file__))
+    try:
+        await m.reply(f"🔄 Rolling back to `{commit}`...")
+        
+        # Reset to commit
+        result = subprocess.run(
+            ["git", "reset", "--hard", commit],
+            capture_output=True, text=True, timeout=30, cwd=repo_path
+        )
+        if result.returncode != 0:
+            return await m.reply(f"❌ Git reset failed:\n```\n{result.stderr}\n```")
+        
+        await m.reply(f"✅ Rolled back to `{commit}`\nRestarting bot...")
+        
+        # Restart bot
+        try:
+            db.set("boot_notify", m.chat.id)
+        except Exception:
+            pass
+        await asyncio.sleep(2)
+        os.execl(sys.executable, sys.executable, *sys.argv)
+        
+    except Exception as e:
+        await m.reply(f"❌ Rollback failed: `{e}`")
+
+
 # ==================== OWNER ONLY: /setstorage ====================
 
 def _read_config_storage():
@@ -3863,7 +3923,7 @@ async def folder_download(m: UpdateNewMessage):
             vduration = vinfo.get("duration", 0)
             _fthumb = vinfo.get("thumbnail")
             total_time = time.time() - start_time
-
+            
             user_tag = get_custom_tag(m.sender_id)
             tag_str = f" ({user_tag})" if user_tag else ""
             user_first_name = m.sender.first_name
@@ -3876,8 +3936,9 @@ async def folder_download(m: UpdateNewMessage):
 ╔══════════⍟
 ╟➣𝙁𝙞𝙡𝙚 𝙉𝙖𝙢𝙚: `{caption_name(data['file_name'])}`
 ╟➣𝙎𝙞𝙯𝙚: **{escape_markdown(data['size'])}**
+╟➣𝗧𝐞𝐫𝐚𝐁𝐨𝐱 𝗟𝗶𝗻𝗸 : [Original Link]({escape_markdown(url).replace(')', '%29')})
 ╟➣𝗗𝗶𝗿𝗲𝗰𝘁 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱 𝗟𝗶𝗻𝗸 : [Click here]({data['direct_link'].replace(')', '%29')})
-╟➣𝗙𝗶𝗿𝘀𝗧 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}{tag_str}
+╟➣𝗙𝗶𝗿𝘀𝘁 𝗡𝗮𝗺𝗲: {escape_markdown(user_first_name)}{tag_str}
 ╟➣𝗨𝘀𝗲𝗿𝗻𝗮𝗺𝗲: @{escape_markdown(user_username or '-')}
 ╟➣𝐓𝐨𝐭𝐚𝐥 𝐓𝐢𝐦𝐞 𝐓𝐚𝐤𝐞𝐧: {total_time:.1f} sec
 ╚═════════════════⍟
