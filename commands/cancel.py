@@ -1,4 +1,4 @@
-"""User /cancel + inline cancel buttons. No main.py imports."""
+"""User /cancel + inline cancel buttons + queue management. No main.py imports."""
 
 from telethon import Button, events
 
@@ -8,7 +8,7 @@ try:
 except Exception:
     _CLEAR = None
 
-from utils.jobs import list_jobs, request_cancel
+from utils.jobs import list_jobs, request_cancel, clear_queue
 
 
 def _clr():
@@ -47,6 +47,11 @@ def register(bot, ctx):
             [Button.inline("Close", data="jobx_close")],
         ]
         await m.reply(text, parse_mode="markdown", buttons=buttons)
+
+    @bot.on(events.NewMessage(pattern=r"^/clearqueue$", incoming=True, outgoing=False))
+    async def _clearqueue(m):
+        clear_queue(db, m.sender_id)
+        await m.reply("🗑️ Download queue **cleared**.")
 
     @bot.on(events.CallbackQuery(pattern=rb"jobx_tap"))
     async def _tap_cancel(e):
