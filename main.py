@@ -3371,16 +3371,17 @@ async def random_video_from_cache(m: UpdateNewMessage):
         # Get all cached keys
         keys = []
         for key in db.scan_iter("*"):
-            k = key.decode()
+            k = key if isinstance(key, str) else key.decode()
             # Skip system keys
             if k.startswith(("user_limit:", "check_", "dl:", "queue:", "queue:paused:", "active_", "member_since:", "all_known_users", "stats:", "history_", "user_stats_", "api_template:", "api_endpoints", "boot_notify", "user_lang", "custom_tags", "gc_", "referral_", "referral_code:", "referral_used:", "premium_", "banned_", "maintenance")):
                 continue
             # Check if it's a video cache entry (has 'ids' and 'url' in JSON)
             val = db.get(key)
             if val:
+                v = val if isinstance(val, str) else val.decode()
                 try:
                     import json as _json
-                    data = _json.loads(val)
+                    data = _json.loads(v)
                     if isinstance(data, dict) and "ids" in data and "url" in data:
                         keys.append((key, data))
                 except Exception:
