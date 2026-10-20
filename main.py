@@ -3331,6 +3331,82 @@ async def rollback_bot(m: UpdateNewMessage):
         await m.reply(f"❌ Rollback failed: `{e}`")
 
 
+# ==================== /vd — RANDOM VIDEO FROM CACHE (ADMIN/OWNER) ====================
+
+@bot.on(
+    events.NewMessage(
+        pattern=r"^/vd(?:\s+(\d+))?$",
+        incoming=True,
+        outgoing=False,
+        func=lambda m: is_admin(m.sender_id),
+    )
+)
+async def random_video_from_cache(m: UpdateNewMessage):
+    """Get random video(s) from cache. Usage: /vd [count]"""
+    args = (m.pattern_match.group(1) or "").strip()
+    count = int(args) if args else 1
+    if count < 1:
+        count = 1
+    if count > 50:
+        return await m.reply("❌ Maximum 50 videos at once.")
+    
+    try:
+        # Get all cached keys
+        keys = []
+        for key in db.scan_iter("*"):
+            k = key.decode()
+            # Skip system keys
+            if k.startswith(("user_limit:", "check_", "dl:", "queue:", "queue:paused:", "active_", "member_since:", "all_known_users", "stats:", "history_", "user_stats_", "api_template:", "api_endpoints", "boot_notify", "user_lang", "custom_tags", "gc_", "referral_", "referral_code:", "referral_used:", "premium_", "banned_", "maintenance")):
+                continue
+            # Check if it's a video cache entry (has 'ids' and 'url' in JSON)
+            val = db.get(key)
+            if val:
+                try:
+                    import json as _json
+                    data = _json.loads(val)
+                    if isinstance(data, dict) and "ids" in data and "url" in data:
+                        keys.append((key, data))
+                except Exception:
+                    pass
+        
+        if not keys:
+            return await m.reply("❌ No cached videos found.")
+        
+        # Pick random entries
+        import random
+        random.shuffle(keys)
+        selected = keys[:count]
+        
+        await m.reply(f"🎲 Sending **{len(selected)}** random cached video(s)...")
+        
+        sent = 0
+        for cache_key, cache_data in selected:
+            try:
+                ids = cache_data.get("ids", [])
+                if not ids:
+                    continue
+                cached_msgs = await bot.get_messages(PRIVATE_CHAT_ID, ids=ids)
+                valid_msgs = [msg for msg in cached_msgs if msg and msg.media]
+                if not valid_msgs:
+                    continue
+                for msg in valid_msgs:
+                    await bot.send_message(
+                        m.chat.id,
+                        f"🎬 **Random from cache**\nSource: {cache_data.get('url', 'Unknown')}",
+                        parse_mode="markdown",
+                    )
+                    await bot.forward_messages(m.chat.id, msg.id, from_peer=PRIVATE_CHAT_ID, drop_author=True)
+                    sent += 1
+                    await asyncio.sleep(1)  # Small delay between sends
+            except Exception as e:
+                log.info(f"Cache forward failed for {cache_key}: {e}")
+        
+        await m.reply(f"✅ Sent **{sent}** random video(s) from cache.")
+        
+    except Exception as e:
+        await m.reply(f"❌ Error: `{e}`")
+
+
 # ==================== OWNER ONLY: /setstorage ====================
 
 def _read_config_storage():
