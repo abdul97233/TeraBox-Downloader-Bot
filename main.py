@@ -3375,6 +3375,12 @@ async def random_video_from_cache(m: UpdateNewMessage):
             # Skip system keys
             if k.startswith(("user_limit:", "check_", "dl:", "queue:", "queue:paused:", "active_", "member_since:", "all_known_users", "stats:", "history_", "user_stats_", "api_template:", "api_endpoints", "boot_notify", "user_lang", "custom_tags", "gc_", "referral_", "referral_code:", "referral_used:", "premium_", "banned_", "maintenance")):
                 continue
+            # Only process string keys (skip hashes, sets, lists, etc.)
+            try:
+                if db.type(key) != b"string" and db.type(key) != "string":
+                    continue
+            except Exception:
+                continue
             # Check if it's a video cache entry (has 'ids' and 'url' in JSON)
             val = db.get(key)
             if val:
