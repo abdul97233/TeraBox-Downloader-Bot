@@ -2088,6 +2088,7 @@ async def _retry_download_via_fallback(url, data, dest, progress_bar):
 
 async def process_next_in_queue(bot, db, user_id):
     """Process the next queued download for a user."""
+    MAX_RETRIES = 3
     from utils.jobs import dequeue_download, is_queue_paused, get_queue
     if is_queue_paused(db, user_id):
         return
@@ -2097,6 +2098,7 @@ async def process_next_in_queue(bot, db, user_id):
     url = next_item.get("url")
     if not url:
         return
+    retry_count = next_item.get("retry_count", 0)
     # Notify user
     try:
         label = next_item.get('label', 'Download')
@@ -2105,6 +2107,8 @@ async def process_next_in_queue(bot, db, user_id):
             msg_text = f"▶️ **Starting queued download** ({label})\nPosition was: {pos}"
         else:
             msg_text = f"▶️ **Starting queued download** ({label})"
+        if retry_count > 0:
+            msg_text += f"\n🔄 Retry {retry_count}/{MAX_RETRIES}"
         await bot.send_message(
             user_id,
             msg_text,
@@ -2130,11 +2134,24 @@ async def process_next_in_queue(bot, db, user_id):
         await handle_message(fake_msg)
     except Exception as e:
         log.info(f"Queue processing failed for {user_id}: {e}")
-        # Re-queue on failure
-        from utils.jobs import enqueue_download
-        from tools import extract_surl_from_url
-        surl = extract_surl_from_url(url) or url[:30]
-        enqueue_download(db, user_id, url, f"TeraBox: {surl} (retry)")
+        # Re-queue on failure with retry count
+        if retry_count < MAX_RETRIES:
+            from utils.jobs import enqueue_download
+            from tools import extract_surl_from_url
+            surl = extract_surl_from_url(url) or url[:30]
+            enqueue_download(db, user_id, url, f"TeraBox: {surl} (retry {retry_count + 1})", retry_count + 1)
+        else:
+            # Max retries reached - notify user
+            try:
+                await bot.send_message(
+                    user_id,
+                    f"❌ **Download failed after {MAX_RETRIES} retries**\n"
+                    f"Link: {url}\n"
+                    f"Please try again later or check the link.",
+                    parse_mode="markdown",
+                )
+            except Exception:
+                pass
 
 
 async def _fail_single_dl(db, shorturl, hm, text, uid, job_id):

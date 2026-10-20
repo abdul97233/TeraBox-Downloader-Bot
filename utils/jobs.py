@@ -323,7 +323,7 @@ def pop_waiters(db, shorturl):
 QUEUE_KEY = "download_queue"
 QUEUE_POSITION_KEY = "queue:position"  # user_id -> position
 
-def enqueue_download(db, user_id, url, label="Download"):
+def enqueue_download(db, user_id, url, label="Download", retry_count=0):
     """Add a download to the user's queue. Returns queue position (1-based)."""
     try:
         user_id = int(user_id)
@@ -335,6 +335,7 @@ def enqueue_download(db, user_id, url, label="Download"):
             "label": label,
             "status": "pending",
             "added": _time.time(),
+            "retry_count": retry_count,
         })
         # Add to user's queue (list)
         pos = db.rpush(f"queue:user:{user_id}", queue_item)
