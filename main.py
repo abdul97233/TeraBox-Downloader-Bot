@@ -2319,11 +2319,32 @@ async def handle_message(m: Message):
         files_to_process = files[:1]
     total = len(files_to_process)
 
-    # Cached forwarding — only for single-file links
+    # Cached forwarding — only for single-file links (with URL verification)
     fileid = db.get(shorturl)
     if fileid and total == 1:
         try:
-            ids = [int(x) for x in str(fileid).split(",")]
+            # Parse cached data (could be just message IDs or JSON with URL)
+            cached_data = None
+            try:
+                import json as _json
+                cached_data = _json.loads(fileid)
+            except Exception:
+                pass
+            
+            ids = []
+            cached_url = None
+            if cached_data and isinstance(cached_data, dict):
+                ids = cached_data.get("ids", [])
+                cached_url = cached_data.get("url")
+            else:
+                # Legacy format: just comma-separated message IDs
+                ids = [int(x) for x in str(fileid).split(",")]
+            
+            # Verify URL matches if we have cached URL
+            if cached_url and cached_url != url:
+                log.info(f"Cache URL mismatch: cached={cached_url} vs current={url}")
+                raise Exception("URL mismatch, skipping cache")
+            
             cached_msgs = await bot.get_messages(PRIVATE_CHAT_ID, ids=ids)
             valid_msgs = [msg for msg in cached_msgs if msg and msg.media]
             if valid_msgs:
@@ -2594,11 +2615,23 @@ async def handle_message(m: Message):
 
         if sent_id:
             if shorturl:
+                import json as _json
                 existing = db.get(shorturl)
+                new_data = {"ids": [sent_id], "url": url}
                 if existing:
-                    db.set(shorturl, f"{existing},{sent_id}")
+                    try:
+                        old = _json.loads(existing)
+                        if isinstance(old, dict) and "ids" in old:
+                            old["ids"].append(sent_id)
+                            old["url"] = url
+                            db.set(shorturl, _json.dumps(old))
+                        else:
+                            # Legacy format
+                            db.set(shorturl, _json.dumps({"ids": [int(x) for x in str(existing).split(",")] + [sent_id], "url": url}))
+                    except Exception:
+                        db.set(shorturl, _json.dumps({"ids": [sent_id], "url": url}))
                 else:
-                    db.set(shorturl, sent_id)
+                    db.set(shorturl, _json.dumps({"ids": [sent_id], "url": url}))
             try:
                 if callable(globals().get("_lib_index")):
                     globals()["_lib_index"](db, sent_id, data["file_name"],
@@ -2846,11 +2879,22 @@ async def handle_message(m: Message):
                 if sent_id:
                     sent_count += 1
                     if shorturl:
+                        import json as _json
                         existing = db.get(shorturl)
+                        new_data = {"ids": [sent_id], "url": url}
                         if existing:
-                            db.set(shorturl, f"{existing},{sent_id}")
+                            try:
+                                old = _json.loads(existing)
+                                if isinstance(old, dict) and "ids" in old:
+                                    old["ids"].append(sent_id)
+                                    old["url"] = url
+                                    db.set(shorturl, _json.dumps(old))
+                                else:
+                                    db.set(shorturl, _json.dumps({"ids": [int(x) for x in str(existing).split(",")] + [sent_id], "url": url}))
+                            except Exception:
+                                db.set(shorturl, _json.dumps({"ids": [sent_id], "url": url}))
                         else:
-                            db.set(shorturl, sent_id)
+                            db.set(shorturl, _json.dumps({"ids": [sent_id], "url": url}))
                     try:
                         if callable(globals().get("_lib_index")):
                             globals()["_lib_index"](db, sent_id, data["file_name"],
