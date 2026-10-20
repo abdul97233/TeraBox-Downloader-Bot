@@ -2340,8 +2340,11 @@ async def handle_message(m: Message):
                 # Legacy format: just comma-separated message IDs
                 ids = [int(x) for x in str(fileid).split(",")]
             
-            # Verify URL matches if we have cached URL
-            if cached_url and cached_url != url:
+            # Verify URL matches - skip cache if we can't verify
+            if cached_url is None:
+                log.info(f"Cache has no URL (legacy format), skipping cache for {url}")
+                raise Exception("No URL in cache, skipping cache")
+            if cached_url != url:
                 log.info(f"Cache URL mismatch: cached={cached_url} vs current={url}")
                 raise Exception("URL mismatch, skipping cache")
             
