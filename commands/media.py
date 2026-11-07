@@ -24,11 +24,14 @@ async def _final_edit(msg, text):
     """Terminal status edit that also removes the Cancel button."""
     try:
         if _CLEAR is not None:
-            await _final_edit(msg, text, buttons=_CLEAR)
+            await msg.edit(text, buttons=_CLEAR)
         else:
-            await _final_edit(msg, text)
+            await msg.edit(text)
     except Exception:
-        pass
+        try:
+            await msg.edit(text)
+        except Exception:
+            pass
 
 
 def _parse_target(data):
@@ -352,3 +355,96 @@ def register(bot, ctx):
                         _os.unlink(f)
                 except Exception:
                     pass
+
+
+    # ─── /subtitle — AUTO-FETCH/ATTACH SUBTITLES ──────────────────
+    @bot.on(events.NewMessage(pattern=r"^/subtitle(?:\s+(\w+))?$", incoming=True, outgoing=False))
+    async def _subtitle_cmd(m):
+        if _gated(m.sender_id):
+            return await m.reply("🔧 Bot is currently under maintenance. Please try again later.")
+
+        replied, (err, ok) = await _need_media(m)
+        if not ok:
+            return await m.reply(err)
+
+        # Parse language argument (default: en)
+        lang = (m.pattern_match.group(1) or "en").lower()
+        if lang not in ("en", "hi", "ne", "es", "fr", "de", "ar", "zh", "ja", "ko"):
+            lang = "en"
+
+        import shutil as _sh
+        if not _sh.which("ffmpeg"):
+            return await m.reply("ffmpeg not installed on server.")
+
+        msg = await m.reply(
+            f"🔍 Searching for {lang.upper()} subtitles...",
+            buttons=[[Button.inline("❌ Cancel", data="jobx_tap")]],
+        )
+
+        video_path = _os.path.join(download_dir, f"sub_{_uuid.uuid4().hex}.mp4")
+        out_path = None
+        try:
+            _os.makedirs(download_dir, exist_ok=True)
+            await bot.download_media(replied, video_path)
+
+            from tools import get_subtitle_for_video
+            loop = asyncio.get_event_loop()
+            sub_path = await loop.run_in_executor(None, get_subtitle_for_video, video_path, (lang, "en", "hi", "ne"))
+
+            if not sub_path or not _os.path.isfile(sub_path):
+                await msg.edit(
+                    f"❌ No {lang.upper()} subtitles found.\n"
+                    f"Tried: embedded tracks + OpenSubtitles\n"
+                    f"Try a different language: `/subtitle hi`",
+                    parse_mode="markdown",
+                )
+                return
+
+            # Mux the subtitle into the video as a soft track. Telethon has no
+            # `subtitle=` send option, so we build a muxed mp4 instead.
+            out_path = video_path.replace(".mp4", "_subbed.mp4")
+            from utils.jobs import job_scope, ffmpeg_run
+            async with job_scope(db, m.sender_id, "subtitle", msg=msg) as job:
+                job["files"].extend([sub_path])
+                import shutil as _sh2
+                ff = _sh2.which("ffmpeg")
+                if ff:
+                    cmd = [ff, "-y", "-i", video_path, "-i", sub_path,
+                           "-c", "copy", "-c:s", "mov_text",
+                           "-map", "0:v", "-map", "0:a?", "-map", "1:0",
+                           "-metadata:s:s:0", f"language={lang}", out_path]
+                    rc, _o, _err = await loop.run_in_executor(None, ffmpeg_run, cmd, 600, job)
+                    if rc == 0 and _os.path.isfile(out_path):
+                        video_path = out_path  # send the muxed version
+
+            await bot.send_file(
+                m.chat.id,
+                file=video_path,
+                caption=f"🎬 Video with {lang.upper()} subtitles",
+                supports_streaming=True,
+            )
+            await msg.delete()
+
+        except asyncio.CancelledError:
+            try:
+                await _final_edit(msg, "❌ Download cancelled successfully.")
+            except Exception:
+                pass
+        except Exception as e:
+            from utils.logx import safe_exc
+            log.info(f"Subtitle fetch failed: {safe_exc(e)}")
+            try:
+                await _final_edit(msg, "❌ Subtitle fetch failed. Video may not have subtitles available.")
+            except Exception:
+                pass
+        finally:
+            try:
+                if video_path and _os.path.isfile(video_path):
+                    _os.unlink(video_path)
+            except Exception:
+                pass
+            try:
+                if out_path and _os.path.isfile(out_path) and out_path != video_path:
+                    _os.unlink(out_path)
+            except Exception:
+                pass

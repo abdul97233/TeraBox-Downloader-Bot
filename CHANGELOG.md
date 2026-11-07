@@ -4,6 +4,37 @@ All notable changes to the TeraBox Downloader Bot.
 
 ---
 
+## v3.9 — Queue Rewrite, Multi-Link & URL Fixes (2026-10-20)
+
+### Download Queue — Rewritten From Scratch
+- **New per-user queue model**: Redis list `q:items:{uid}` with compact JSON items, global stats set `q:users`
+- **Legacy migration**: old `queue:user:{uid}` items move automatically to the new key on first touch
+- **Single-drain guard**: only one queue processor per user can run at a time (no double processing)
+- **Deduplication**: enqueuing the same link (or same share code via a mirror domain) is skipped
+- **Smart requeue**: rate-limit / maintenance stops draining instead losing items; failed items re-queued at the head with retry counter (max 3, then user notified)
+- **Queue now drains itself**: after every download (success, cached hit, failure) the next queued item starts automatically — previously only the single-file success path could advance the queue
+- **Queue items skip cooldown / force-join checks** (already validated at request time) — fixes queue items failing because of the 10s download cooldown
+- New `/queue` for everyone (previously admin-only): view with positions + retry badges, `pause`, `resume`, `remove <position>`, `clear`; admins get `stats` and `view <user_id>`
+
+### Multi-Link In One Post — Fixed
+- Extra links enqueue exactly once, after maintenance/ban/cooldown/force-join/rate-limit gates (no more double-enqueue loops)
+- New users with an active queue: every link in the message is queued with dedupe
+
+### URL Extraction — Rewritten (fixes wrong "Original Link" in captions)
+- Regex `\S+` grabbed trailing junk (`)`, `,`, `|`, quotes) and comma-joined links merged into one broken URL
+- New extractor splits on separators, strips trailing punctuation, dedupes by share code, caps at 20 links
+- `Original Link` caption now always shows a clean, clickable URL
+
+### Media Tool Fixes
+- `/mp3`, `/compress`, `/subtitle` final status messages no longer die on `_final_edit` recursion (Cancel button now clears properly)
+- `/subtitle` now **muxes**: Telethon has no `subtitle=` send option — the .srt is muxed into the mp4 as a soft track via ffmpeg, then sent; downloads are cancellable via the queue job registry
+
+### Fixed
+- Queue `FakeMessage` was missing `.chat` — cached-file queue items crashed with AttributeError and were retried to death
+- `/vd` command: byte/str handling, `cached_videos` set index with auto-rebuild fallback in an executor + 60s timeout (no more bot hang on rebuild)
+
+---
+
 ## v3.8 — Limits, Multi-Link & User Management (2026-09-21)
 
 ### Configurable Download Limits

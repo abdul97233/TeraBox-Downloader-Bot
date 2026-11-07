@@ -482,9 +482,52 @@ def extract_code_from_url(url: str) -> str | None:
     return None
 
 
+# ---- URL extraction (clean + multi-link aware) ----
+
+_URL_CANDIDATE_RE = re.compile(r"https?://[^\s<>\"'`\\]+")
+# Chars that commonly trail a URL in copied text: "link), link1 | https://..."
+_TRAIL_CHARS = ".,;:!?)]}>'\"|«»"
+
+
+def _clean_candidate_url(candidate: str) -> str:
+    u = candidate.strip()
+    while u and u[-1] in _TRAIL_CHARS:
+        u = u[:-1]
+    return u
+
+
+def _iter_terabox_urls(string: str) -> list[str]:
+    """Extract clean, unique TeraBox URLs from any text.
+
+    Handles: multiple links on one line, comma/pipe/semicolon/newline
+    separated lists, trailing punctuation, markdown-wrapped links.
+    Dedupes by share code (same file via different mirror domains = 1 link).
+    """
+    if not string:
+        return []
+    out, seen_urls, seen_codes = [], set(), set()
+    text = str(string).replace("\r", "\n")
+    # Split on separators users paste between links (keep URL chars intact)
+    for chunk in re.split(r"[,;|•·]+", text):
+        for candidate in _URL_CANDIDATE_RE.findall(chunk):
+            clean = _clean_candidate_url(candidate)
+            if not clean or clean in seen_urls:
+                continue
+            if not check_url_patterns(clean):
+                continue
+            seen_urls.add(clean)
+            code = extract_code_from_url(clean)
+            if code:
+                if code in seen_codes:
+                    continue  # same file via another mirror domain
+                seen_codes.add(code)
+            out.append(clean)
+    return out[:20]  # hard safety cap
+
+
 def get_urls_from_string(string: str) -> str | None:
     """
-    Extracts all URLs from a given string.
+    Extracts the first clean TeraBox URL from a given string.
 
     Parameters:
         string (str): The input string.
@@ -492,17 +535,13 @@ def get_urls_from_string(string: str) -> str | None:
     Returns:
         str: The first URL found in the input string, or None if no URLs were found.
     """
-    pattern = r"(https?://\S+)"
-    urls = re.findall(pattern, string)
-    urls = [url for url in urls if check_url_patterns(url)]
-    if not urls:
-        return
-    return urls[0]
+    urls = _iter_terabox_urls(string)
+    return urls[0] if urls else None
 
 
 def get_all_urls_from_string(string: str) -> list[str]:
     """
-    Extracts all valid TeraBox URLs from a given string.
+    Extracts all clean, unique TeraBox URLs from a given string.
 
     Parameters:
         string (str): The input string.
@@ -510,10 +549,7 @@ def get_all_urls_from_string(string: str) -> list[str]:
     Returns:
         list: List of all valid TeraBox URLs found in the input string.
     """
-    pattern = r"(https?://\S+)"
-    urls = re.findall(pattern, string)
-    urls = [url for url in urls if check_url_patterns(url)]
-    return urls
+    return _iter_terabox_urls(string)
 
 
 def extract_surl_from_url(url: str) -> str:
@@ -724,3 +760,169 @@ def bytesio_from_file(path: str, filename: str) -> BytesIO | None:
         return bio
     except Exception:
         return None
+
+
+# ─── Subtitle Support ───
+
+SUBTITLE_EXTENSIONS = {".srt", ".ass", ".ssa", ".vtt", ".sub", ".idx"}
+
+def check_embedded_subtitles(file_path: str) -> list[dict]:
+    """Check for embedded subtitle tracks in a video file using ffprobe.
+    Returns list of dicts: [{index, language, codec, title}, ...]"""
+    try:
+        import subprocess, json
+        cmd = [
+            "ffprobe", "-v", "quiet", "-print_format", "json",
+            "-show_streams", "-select_streams", "s", file_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            return []
+        data = json.loads(result.stdout)
+        subs = []
+        for stream in data.get("streams", []):
+            subs.append({
+                "index": stream.get("index"),
+                "language": stream.get("tags", {}).get("language", "und"),
+                "codec": stream.get("codec_name"),
+                "title": stream.get("tags", {}).get("title", ""),
+            })
+        return subs
+    except Exception:
+        return []
+
+def extract_subtitle(file_path: str, stream_index: int, output_path: str) -> bool:
+    """Extract a specific subtitle stream to a file."""
+    try:
+        import subprocess
+        cmd = [
+            "ffmpeg", "-y", "-i", file_path,
+            "-map", f"0:{stream_index}",
+            "-c:s", "srt",
+            output_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=60)
+        return result.returncode == 0 and os.path.isfile(output_path)
+    except Exception:
+        return False
+
+def extract_all_subtitles(file_path: str, output_dir: str) -> list[str]:
+    """Extract all embedded subtitles to separate .srt files."""
+    subs = check_embedded_subtitles(file_path)
+    extracted = []
+    for sub in subs:
+        idx = sub["index"]
+        lang = sub["language"]
+        out_path = os.path.join(output_dir, f"{os.path.splitext(os.path.basename(file_path))[0]}.{lang}.srt")
+        if extract_subtitle(file_path, idx, out_path):
+            extracted.append(out_path)
+    return extracted
+
+# OpenSubtitles integration (requires API key - using free tier)
+OPENSUBTITLES_BASE = "https://api.opensubtitles.com/api/v1"
+OPENSUBTITLES_USER_AGENT = "TeraBoxBot/1.0"
+
+def search_subtitles_opensubtitles(query: str, lang: str = "en", limit: int = 5) -> list[dict]:
+    """Search subtitles on OpenSubtitles. Requires API key for full access."""
+    try:
+        import requests
+        params = {
+            "query": query,
+            "languages": lang,
+            "type": "movie",
+        }
+        headers = {"User-Agent": OPENSUBTITLES_USER_AGENT}
+        resp = requests.get(f"{OPENSUBTITLES_BASE}/subtitles", params=params, headers=headers, timeout=15)
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        results = []
+        for item in data.get("data", [])[:limit]:
+            attrs = item.get("attributes", {})
+            results.append({
+                "file_id": item.get("id"),
+                "title": attrs.get("feature_details", {}).get("title", ""),
+                "language": attrs.get("language", lang),
+                "download_count": attrs.get("download_count", 0),
+                "rating": attrs.get("ratings", 0),
+            })
+        return results
+    except Exception:
+        return []
+
+def download_subtitle_opensubtitles(file_id: str, output_path: str) -> bool:
+    """Download a subtitle file from OpenSubtitles by file_id."""
+    try:
+        import requests
+        headers = {"User-Agent": OPENSUBTITLES_USER_AGENT}
+        resp = requests.post(
+            f"{OPENSUBTITLES_BASE}/download",
+            json={"file_id": file_id},
+            headers=headers,
+            timeout=30
+        )
+        if resp.status_code != 200:
+            return False
+        data = resp.json()
+        download_link = data.get("link")
+        if not download_link:
+            return False
+        # Download the actual subtitle file (usually a zip)
+        sub_resp = requests.get(download_link, timeout=30)
+        if sub_resp.status_code != 200:
+            return False
+        # Handle zip or direct .srt
+        import zipfile, io
+        if download_link.endswith(".zip"):
+            with zipfile.ZipFile(io.BytesIO(sub_resp.content)) as z:
+                for name in z.namelist():
+                    if name.endswith((".srt", ".ass", ".vtt")):
+                        with open(output_path, "wb") as f:
+                            f.write(z.read(name))
+                        return True
+        else:
+            with open(output_path, "wb") as f:
+                f.write(sub_resp.content)
+            return True
+        return False
+    except Exception:
+        return False
+
+def get_subtitle_for_video(file_path: str, preferred_langs=("en", "hi", "ne")) -> str | None:
+    """Main entry: try embedded, then OpenSubtitles, return path to .srt or None."""
+    # 1. Check embedded
+    embedded = check_embedded_subtitles(file_path)
+    if embedded:
+        # Try to find preferred language
+        for lang in preferred_langs:
+            for sub in embedded:
+                if sub["language"].lower().startswith(lang[:2]):
+                    out_path = os.path.join(
+                        os.path.dirname(file_path),
+                        f"{os.path.splitext(os.path.basename(file_path))[0]}.{sub['language']}.srt"
+                    )
+                    if extract_subtitle(file_path, sub["index"], out_path):
+                        return out_path
+        # Extract first available
+        first = embedded[0]
+        out_path = os.path.join(
+            os.path.dirname(file_path),
+            f"{os.path.splitext(os.path.basename(file_path))[0]}.{first['language']}.srt"
+        )
+        if extract_subtitle(file_path, first["index"], out_path):
+            return out_path
+
+    # 2. Try OpenSubtitles (if API key available)
+    # Skip for now - requires API key
+    # query = os.path.splitext(os.path.basename(file_path))[0]
+    # results = search_subtitles_opensubtitles(query)
+    # ...
+
+    return None
+
+def attach_subtitle_to_send(file_path: str, subtitle_path: str | None) -> dict | None:
+    """Prepare file dict for send_file with subtitle attached.
+    Returns dict with 'subtitle' key if subtitle exists."""
+    if subtitle_path and os.path.isfile(subtitle_path):
+        return {"subtitle": subtitle_path}
+    return None

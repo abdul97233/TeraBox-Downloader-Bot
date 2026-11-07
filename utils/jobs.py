@@ -318,133 +318,265 @@ def pop_waiters(db, shorturl):
     return out
 
 
-# ---- Download Queue System ----
+# ---- Download Queue System (v2 — rewritten from scratch) ----
+#
+# Model:
+# - Per-user Redis LIST  q:items:{uid}  — compact JSON items in FIFO order
+# - Redis SET            q:users       — user_ids that have queued items (stats)
+# - Redis STRING         queue:paused:{uid} — pause flag (same key as legacy)
+# - Backwards compatible: legacy items under queue:user:{uid} are migrated
+#   to the new key on first touch; old item shape (user_id/job_id/status)
+#   is parsed tolerantly everywhere.
 
-QUEUE_KEY = "download_queue"
-QUEUE_POSITION_KEY = "queue:position"  # user_id -> position
+QUEUE_MAX_PER_USER = 100
+QUEUE_MAX_RETRIES = 3
+QUEUE_USERS_KEY = "q:users"  # set of user_ids with queued items (stats)
 
-def enqueue_download(db, user_id, url, label="Download", retry_count=0):
-    """Add a download to the user's queue. Returns queue position (1-based)."""
+
+class QueueHold(Exception):
+    """Raised to stop queue draining (rate limit hit / maintenance). Item stays queued."""
+
+
+def _user_queue_key(user_id):
+    return f"q:items:{int(user_id)}"
+
+
+_LEGACY_QUEUE_KEY = "queue:user:{uid}"
+_PAUSE_KEY = "queue:paused:"
+
+
+def _migrate_legacy(db, user_id):
+    """Move old queue:user:{uid} items into q:items:{uid}. Best effort."""
+    try:
+        legacy_key = _LEGACY_QUEUE_KEY.format(uid=int(user_id))
+        legacy = db.lrange(legacy_key, 0, -1) or []
+        if legacy:
+            key = _user_queue_key(user_id)
+            new_items = db.lrange(key, 0, -1) or []
+            if not new_items:
+                for raw in legacy:
+                    db.rpush(key, raw.decode() if isinstance(raw, (bytes, bytearray)) else raw)
+                db.sadd(QUEUE_USERS_KEY, str(int(user_id)))
+            db.delete(legacy_key)
+    except Exception:
+        pass
+
+
+def _make_queue_item(url, label, retries):
+    try:
+        return _json.dumps(
+            {
+                "id": _uuid.uuid4().hex[:10],
+                "url": str(url),
+                "label": str(label or "Download")[:100],
+                "retries": int(retries or 0),
+                "added": round(_time.time(), 2),
+            },
+            ensure_ascii=False,
+        )
+    except Exception:
+        return None
+
+
+def _parse_queue_item(raw):
+    try:
+        if isinstance(raw, (bytes, bytearray)):
+            raw = raw.decode("utf-8", "ignore")
+        item = _json.loads(raw)
+        if not isinstance(item, dict) or not item.get("url"):
+            return None
+        item.setdefault("retries", item.get("retry_count", 0) or 0)
+        item.setdefault("label", "Download")
+        item.setdefault("id", _uuid.uuid4().hex[:10])
+        return item
+    except Exception:
+        return None
+
+
+def enqueue_download(db, user_id, url, label="Download", retries=0, retry_count=None,
+                     front=False, dedupe=True):
+    """Queue a download for a user. Returns (ok, position).
+
+    - dedupe: skip if the same URL is already pending for this user
+    - front: push to the head of the queue (used for requeued failures)
+    """
     try:
         user_id = int(user_id)
-        job_id = _uuid.uuid4().hex[:12]
-        queue_item = _json.dumps({
-            "job_id": job_id,
-            "user_id": user_id,
-            "url": url,
-            "label": label,
-            "status": "pending",
-            "added": _time.time(),
-            "retry_count": retry_count,
-        })
-        # Add to user's queue (list)
-        pos = db.rpush(f"queue:user:{user_id}", queue_item)
-        # Also add to global queue for admin view
-        db.zadd(QUEUE_KEY, {queue_item: _time.time()})
-        return pos
+        if retry_count is not None:
+            retries = int(retry_count)
+        _migrate_legacy(db, user_id)
+        key = _user_queue_key(user_id)
+        items = db.lrange(key, 0, -1) or []
+        if len(items) >= QUEUE_MAX_PER_USER:
+            return False, 0
+        if dedupe:
+            import tools as _tools
+            url_norm = str(url).split("?")[0]
+            try:
+                url_code = _tools.extract_code_from_url(url) or None
+            except Exception:
+                url_code = None
+            for raw in items:
+                it = _parse_queue_item(raw)
+                if not it:
+                    continue
+                if str(it.get("url", "")).split("?")[0] == url_norm:
+                    return False, 0
+                if url_code:
+                    try:
+                        if url_code == (_tools.extract_code_from_url(it.get("url", "")) or None):
+                            return False, 0
+                    except Exception:
+                        pass
+        item = _make_queue_item(url, label, retries)
+        if not item:
+            return False, 0
+        if front:
+            db.lpush(key, item)
+        else:
+            db.rpush(key, item)
+        db.sadd(QUEUE_USERS_KEY, str(int(user_id)))
+        position = len(db.lrange(key, 0, -1) or [])
+        return True, position
+    except Exception:
+        return False, 0
+
+
+def dequeue_download(db, user_id):
+    """Pop the oldest pending download for a user. Returns item dict or None."""
+    try:
+        user_id = int(user_id)
+        _migrate_legacy(db, user_id)
+        key = _user_queue_key(user_id)
+        raw = db.lpop(key)
+        if raw is None:
+            try:
+                # queue drained: drop user from stats set
+                if not (db.lrange(key, 0, -1) or []):
+                    db.srem(QUEUE_USERS_KEY, str(int(user_id)))
+            except Exception:
+                pass
+            return None
+        item = _parse_queue_item(raw)
+        if item is None:
+            raw2 = db.lpop(key)
+            item = _parse_queue_item(raw2) if raw2 is not None else None
+            if item is None:
+                return None
+        return item
+    except Exception:
+        return None
+
+
+def queue_size(db, user_id):
+    """Number of pending items for a user."""
+    try:
+        _migrate_legacy(db, user_id)
+        return len(db.lrange(_user_queue_key(user_id), 0, -1) or []) or 0
     except Exception:
         return 0
 
-def dequeue_download(db, user_id):
-    """Remove and return the next pending download for user."""
-    try:
-        item = db.lpop(f"queue:user:{user_id}")
-        if item:
-            # Remove from global queue
-            db.zrem(QUEUE_KEY, item)
-            return _json.loads(item)
-        return None
-    except Exception:
-        return None
 
 def get_queue(db, user_id):
-    """Get all items in user's queue."""
+    """All pending items for a user, each with a 1-based position."""
     try:
-        items = db.lrange(f"queue:user:{user_id}", 0, -1) or []
-        queue = []
-        for i, item in enumerate(items):
-            try:
-                q = _json.loads(item)
-                q["position"] = i + 1
-                queue.append(q)
-            except Exception:
-                pass
-        return queue
+        user_id = int(user_id)
+        _migrate_legacy(db, user_id)
+        items = db.lrange(_user_queue_key(user_id), 0, -1) or []
+        out = []
+        for i, raw in enumerate(items):
+            it = _parse_queue_item(raw)
+            if it:
+                it["position"] = i + 1
+                out.append(it)
+        return out
     except Exception:
         return []
 
-def get_queue_position(db, user_id):
-    """Get current position of user's active download (0 if none)."""
-    try:
-        queue = get_queue(db, user_id)
-        return len(queue)
-    except Exception:
-        return 0
 
 def pause_queue(db, user_id):
-    """Pause queue by setting a flag."""
     try:
-        db.set(f"queue:paused:{user_id}", "1", ex=86400)
+        db.set(f"{_PAUSE_KEY}{int(user_id)}", "1", ex=86400)
         return True
     except Exception:
         return False
+
 
 def resume_queue(db, user_id):
-    """Resume queue by removing pause flag."""
     try:
-        db.delete(f"queue:paused:{user_id}")
+        db.delete(f"{_PAUSE_KEY}{int(user_id)}")
         return True
     except Exception:
         return False
+
 
 def is_queue_paused(db, user_id):
-    """Check if queue is paused."""
     try:
-        return bool(db.get(f"queue:paused:{user_id}"))
+        flag = db.get(f"{_PAUSE_KEY}{int(user_id)}")
+        if isinstance(flag, (bytes, bytearray)):
+            flag = flag.decode()
+        return bool(flag)
     except Exception:
         return False
 
-def remove_from_queue(db, user_id, job_id):
-    """Remove a specific job from queue by job_id."""
-    try:
-        items = db.lrange(f"queue:user:{user_id}", 0, -1) or []
-        for item in items:
-            try:
-                q = _json.loads(item)
-                if q.get("job_id") == job_id:
-                    db.lrem(f"queue:user:{user_id}", 1, item)
-                    db.zrem(QUEUE_KEY, item)
-                    return True
-            except Exception:
-                pass
-        return False
-    except Exception:
-        return False
 
-def clear_queue(db, user_id):
-    """Clear all items from user's queue."""
+def remove_from_queue(db, user_id, ident):
+    """Remove a specific job by item id OR 1-based position number."""
     try:
-        items = db.lrange(f"queue:user:{user_id}", 0, -1) or []
-        for item in items:
-            db.zrem(QUEUE_KEY, item)
-        db.delete(f"queue:user:{user_id}")
+        user_id = int(user_id)
+        key = _user_queue_key(user_id)
+        items = db.lrange(key, 0, -1) or []
+        parsed = [(i, raw, _parse_queue_item(raw)) for i, raw in enumerate(items)]
+        target_idx = None
+        ident_s = str(ident).strip()
+        if ident_s.isdigit():
+            pos = int(ident_s)
+            if 1 <= pos <= len(parsed):
+                target_idx = pos - 1
+        else:
+            for i, _raw, it in parsed:
+                if it and str(it.get("id")) == ident_s:
+                    target_idx = i
+                    break
+        if target_idx is None:
+            return False
+        _, raw, _it = parsed[target_idx]
+        db.lrem(key, 1, raw)
         return True
     except Exception:
         return False
 
-def get_global_queue_stats(db):
-    """Get global queue statistics for admin dashboard."""
+
+def clear_queue(db, user_id):
     try:
-        total = db.zcard(QUEUE_KEY)
-        # Get unique users in queue
-        users = set()
-        items = db.zrange(QUEUE_KEY, 0, -1) or []
-        for item in items:
+        db.delete(_user_queue_key(user_id))
+        db.delete(f"{_PAUSE_KEY}{int(user_id)}")
+        try:
+            db.srem(QUEUE_USERS_KEY, str(int(user_id)))
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False
+
+
+def get_global_queue_stats(db):
+    """Global queue statistics for the admin dashboard."""
+    try:
+        users = db.smembers(QUEUE_USERS_KEY) or []
+        total = 0
+        waiters = 0
+        for u in users:
             try:
-                q = _json.loads(item)
-                users.add(q.get("user_id"))
+                uid = u.decode() if isinstance(u, (bytes, bytearray)) else u
+                n = len(db.lrange(_user_queue_key(uid), 0, -1) or [])
+                if n > 0:
+                    total += n
+                    waiters += 1
+                else:
+                    db.srem(QUEUE_USERS_KEY, uid)
             except Exception:
                 pass
-        return {"total_queued": total, "users_waiting": len(users)}
+        return {"total_queued": total, "users_waiting": waiters}
     except Exception:
         return {"total_queued": 0, "users_waiting": 0}

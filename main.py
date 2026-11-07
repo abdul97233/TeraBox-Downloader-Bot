@@ -2029,7 +2029,7 @@ async def get_message(m: Message):
     if int(m.sender_id) != int(OWNER_ID) and _INFLIGHT_MSGS >= _MAX_INFLIGHT_MSGS:
         return await m.reply("⏳ Server busy — please try again in a moment.")
     _INFLIGHT_MSGS += 1
-    _t = asyncio.create_task(handle_message(m))
+    _t = asyncio.create_task(_handle_and_queue(m))
 
     def _swallow(t):
         global _INFLIGHT_MSGS
@@ -2050,6 +2050,17 @@ async def get_message(m: Message):
                 pass
 
     _t.add_done_callback(_swallow)
+
+
+async def _handle_and_queue(m: Message):
+    """Run a download, then drain the user's queue — covers every exit path."""
+    try:
+        await handle_message(m)
+    finally:
+        try:
+            await process_next_in_queue(bot, db, m.sender_id)
+        except Exception:
+            pass
 
 
 DL_QUALITY_MAP = {
@@ -2084,74 +2095,138 @@ async def _retry_download_via_fallback(url, data, dest, progress_bar):
         return False
 
 
-# ─── Queue Processor ───────────────────────────────────────────────
+# ─── Queue Helpers ─────────────────────────────────────────────────
 
-async def process_next_in_queue(bot, db, user_id):
-    """Process the next queued download for a user."""
-    MAX_RETRIES = 3
-    from utils.jobs import dequeue_download, is_queue_paused, get_queue
-    if is_queue_paused(db, user_id):
-        return
-    next_item = dequeue_download(db, user_id)
-    if not next_item:
-        return
-    url = next_item.get("url")
-    if not url:
-        return
-    retry_count = next_item.get("retry_count", 0)
-    # Notify user
+def _queue_label_for(u):
+    """Human-friendly label for a queued link."""
     try:
-        label = next_item.get('label', 'Download')
-        pos = next_item.get('position')
-        if pos is not None:
-            msg_text = f"▶️ **Starting queued download** ({label})\nPosition was: {pos}"
-        else:
-            msg_text = f"▶️ **Starting queued download** ({label})"
-        if retry_count > 0:
-            msg_text += f"\n🔄 Retry {retry_count}/{MAX_RETRIES}"
-        await bot.send_message(
-            user_id,
-            msg_text,
-            parse_mode="markdown",
+        code = extract_code_from_url(u) or str(u)[:35]
+        return f"TeraBox: {code}"
+    except Exception:
+        return "Download"
+
+
+def _hold_queue_item(db, m, url):
+    """Re-queue a from_queue item at the FRONT when draining must stop."""
+    try:
+        from utils.jobs import enqueue_download
+        enqueue_download(
+            db, m.sender_id, url,
+            getattr(m, "_queue_label", "Download") or "Download",
+            retries=int(getattr(m, "_queue_retries", 0) or 0),
+            front=True, dedupe=False,
         )
     except Exception:
         pass
-    # Create a fake message object to reuse handle_message logic
-    class FakeMessage:
-        def __init__(self, uid, text):
-            self.sender_id = uid
-            self.text = text
-            self.chat_id = uid
-            self.sender = type('obj', (object,), {'first_name': 'User', 'username': ''})()
-            self.is_private = True
-            self.is_reply = False
-            self.id = 0
 
-        async def reply(self, text, **kwargs):
-            return await bot.send_message(self.chat_id, text, **kwargs)
-    fake_msg = FakeMessage(user_id, url)
+
+# ─── Queue Processor ───────────────────────────────────────────────
+
+_QUEUE_RUNNING: set = set()
+
+
+class _QueueFakeMessage:
+    """Minimal message-like object so queued links reuse handle_message()."""
+
+    def __init__(self, bot, uid, text, label=None, retries=0):
+        self.sender_id = uid
+        self.chat_id = uid
+        self.chat = type("ChatObj", (), {"id": uid})()
+        self.text = text
+        self.is_private = True
+        self.is_reply = False
+        self.id = 0
+        self.sender = type("SenderObj", (), {"first_name": "User", "username": None})()
+        self._queue_label = label or "Download"
+        self._queue_retries = int(retries or 0)
+        self._bot = bot
+
+    async def reply(self, text, **kwargs):
+        return await self._bot.send_message(self.chat_id, text, **kwargs)
+
+
+async def process_next_in_queue(bot, db, user_id):
+    """Drain the user's download queue.
+
+    Safe to call from anywhere and any number of times: only ONE processor
+    per user runs at a time (the rest are instant no-ops). Each queued link
+    is replayed through handle_message(from_queue=True) which skips
+    cooldown / force-join checks (already validated at request time).
+    """
+    uid = int(user_id)
+    if uid in _QUEUE_RUNNING:
+        return
+    _QUEUE_RUNNING.add(uid)
     try:
-        await handle_message(fake_msg)
-    except Exception as e:
-        log.info(f"Queue processing failed for {user_id}: {e}")
-        # Re-queue on failure with retry count
-        if retry_count < MAX_RETRIES:
-            from utils.jobs import enqueue_download
-            from tools import extract_surl_from_url
-            surl = extract_surl_from_url(url) or url[:30]
-            enqueue_download(db, user_id, url, f"TeraBox: {surl} (retry {retry_count + 1})", retry_count + 1)
-        else:
-            # Max retries reached - notify user
+        from utils.jobs import (
+            dequeue_download, enqueue_download, is_queue_paused, QueueHold,
+        )
+        while True:
+            if is_queue_paused(db, uid):
+                return
+            item = dequeue_download(db, uid)
+            if not item:
+                return
+            url = item.get("url") or ""
+            label = item.get("label") or "Download"
+            retries = int(item.get("retries", 0) or 0)
+            if not url:
+                continue
+
             try:
                 await bot.send_message(
-                    user_id,
-                    f"❌ **Download failed after {MAX_RETRIES} retries**\n"
-                    f"Link: {url}\n"
-                    f"Please try again later or check the link.",
+                    uid,
+                    f"▶️ **Starting queued download** ({label})",
                     parse_mode="markdown",
                 )
             except Exception:
                 pass
+
+            fake_msg = _QueueFakeMessage(bot, uid, url, label=item.get("label"), retries=retries)
+            try:
+                await handle_message(fake_msg, from_queue=True)
+            except asyncio.CancelledError:
+                return  # user cancelled this download — stop draining
+            except QueueHold:
+                return  # rate limit / maintenance — item was re-queued, stop
+            except Exception as e:
+                log.info(f"Queue item failed for {uid} ({label}): {e}")
+                if retries < 3:  # match jobs.QUEUE_MAX_RETRIES
+                    ok, pos = enqueue_download(
+                        db, uid, url,
+                        f"{label} (retry {retries + 1})",
+                        retries=retries + 1, front=True,
+                    )
+                    try:
+                        if ok:
+                            await bot.send_message(
+                                uid,
+                                f"🔄 **Queued download failed** — re-queued as retry "
+                                f"{retries + 1}/3",
+                                parse_mode="markdown",
+                            )
+                        else:
+                            await bot.send_message(
+                                uid,
+                                f"❌ **Download failed after 3 retries**\n"
+                                f"Link: {url}",
+                                parse_mode="markdown",
+                            )
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        await bot.send_message(
+                            uid,
+                            f"❌ **Download failed after 3 retries**\n"
+                            f"Link: {url}\n"
+                            f"Please resend the link if you still need it.",
+                            parse_mode="markdown",
+                        )
+                    except Exception:
+                        pass
+    finally:
+        _QUEUE_RUNNING.discard(uid)
 
 
 async def _fail_single_dl(db, shorturl, hm, text, uid, job_id):
@@ -2186,20 +2261,30 @@ async def _fail_single_dl(db, shorturl, hm, text, uid, job_id):
     return None
 
 
-async def handle_message(m: Message):
+async def handle_message(m: Message, from_queue: bool = False):
 
     from tools import get_all_urls_from_string
+    from utils.jobs import (
+        get_queue, is_queue_paused, enqueue_download, QueueHold,
+    )
+
     urls = get_all_urls_from_string(m.text)
     if not urls:
+        if from_queue:
+            return  # queued link is no longer valid — drop it silently
         from utils.errors import send_user_error as _sue
         return await _sue(m, "unsupported_link")
 
-    # Use first URL for this download, enqueue the rest
+    # Multi-link in one post: process the first link now, queue the rest.
     url = urls[0]
-    extra_urls = urls[1:] if len(urls) > 1 else []
+    extra_urls = urls[1:]
 
     # Maintenance mode check
     if is_maintenance():
+        if from_queue:
+            # Stop draining during maintenance; keep the item queued.
+            _hold_queue_item(db, m, url)
+            raise QueueHold("maintenance")
         return await m.reply("🔧 Bot is currently under maintenance. Please try again later.")
 
     # Ban check
@@ -2208,23 +2293,59 @@ async def handle_message(m: Message):
 
     # Premium users skip cooldown and rate limits
     is_premium = is_premium_user(m.sender_id)
+    is_owner = (m.sender_id == OWNER_ID)
 
-    # Anti-spam cooldown check (skip for premium/admin)
-    if not is_premium and not is_admin(m.sender_id):
+    # Anti-spam cooldown check (skip for queue items — accepted at request time)
+    if not from_queue and not is_premium and not is_admin(m.sender_id):
         cooldown = check_cooldown(m.sender_id)
         if cooldown > 0:
             return await m.reply(f"⏳ Please wait **{cooldown} seconds** before downloading again.")
 
-    # Enqueue extra URLs
-    if extra_urls:
-        from utils.jobs import enqueue_download
-        from tools import extract_surl_from_url
+    # Force join checks (skip for queue items — validated at request time)
+    if not from_queue:
+        for ch in FORCE_CHANNELS:
+            check_if = await is_user_on_chat(bot, ch, m.sender_id)
+            if not check_if:
+                return await m.reply(f"Please join {ch} then send me the link again.")
+        for gr in FORCE_GROUPS:
+            check_if = await is_user_on_chat(bot, gr, m.sender_id)
+            if not check_if:
+                return await m.reply(f"Please join {gr} then send me the link again.")
+
+    # ---- User already has a queue running → queue every link in this message ----
+    if not from_queue and not is_owner:
+        queue_now = get_queue(db, m.sender_id)
+        is_paused = is_queue_paused(db, m.sender_id)
+        if queue_now or is_paused:
+            queued_n = 0
+            for u in urls:
+                ok, _pos = enqueue_download(db, m.sender_id, u, _queue_label_for(u))
+                if ok:
+                    queued_n += 1
+            if not queued_n:
+                return await m.reply("📭 These link(s) are already in your queue.")
+            queue_note = (
+                "⏸️ Your queue is paused — use `/queue resume`."
+                if is_paused
+                else "⏳ Your previous download is still running."
+            )
+            return await m.reply(
+                f"📥 **Added {queued_n} link(s) to your queue**\n"
+                f"{queue_note}\n\n"
+                f"Use `/queue` to view your downloads.",
+                parse_mode="markdown",
+            )
+
+    # Enqueue extra URLs AFTER all gates (rate-limited users don't fill the queue)
+    if extra_urls and not from_queue:
+        queued_extra = 0
         for u in extra_urls:
-            surl = extract_surl_from_url(u) or u[:30]
-            enqueue_download(db, m.sender_id, u, f"TeraBox: {surl}")
-        if len(extra_urls) > 0:
+            ok, _pos = enqueue_download(db, m.sender_id, u, _queue_label_for(u))
+            if ok:
+                queued_extra += 1
+        if queued_extra:
             await m.reply(
-                f"📥 **Added {len(extra_urls)} more link(s) to queue**\n"
+                f"📥 **Added {queued_extra} more link(s) to queue**\n"
                 f"Use `/queue` to view your queue.",
                 parse_mode="markdown",
             )
@@ -2247,44 +2368,6 @@ async def handle_message(m: Message):
         db.sadd(user_set_key, str(m.sender_id))
         db.hincrby(STATS_KEY, "total_users", 1)
 
-    # Force join check — channels
-    for ch in FORCE_CHANNELS:
-        check_if = await is_user_on_chat(bot, ch, m.sender_id)
-        if not check_if:
-            return await m.reply(f"Please join {ch} then send me the link again.")
-
-    # Force join check — groups
-    for gr in FORCE_GROUPS:
-        check_if = await is_user_on_chat(bot, gr, m.sender_id)
-        if not check_if:
-            return await m.reply(f"Please join {gr} then send me the link again.")
-
-    # ---- Download Queue Check ----
-    from utils.jobs import get_queue, is_queue_paused, enqueue_download
-    queue = get_queue(db, m.sender_id)
-    is_paused = is_queue_paused(db, m.sender_id)
-    is_owner = (m.sender_id == OWNER_ID)
-
-    # Owner bypasses queue
-    if not is_owner and (queue or is_paused):
-        # Get all URLs from message
-        from tools import get_all_urls_from_string, extract_surl_from_url
-        urls = get_all_urls_from_string(m.text)
-        if not urls:
-            urls = [url]  # fallback to single url
-
-        from utils.jobs import enqueue_download
-        for u in urls:
-            surl = extract_surl_from_url(u) or u[:30]
-            enqueue_download(db, m.sender_id, u, f"TeraBox: {surl}")
-        pos = len(queue) + 1
-        return await m.reply(
-            f"📥 **Added to queue** (position: {pos})\n"
-            f"{'⏸️ Queue is paused.' if is_paused else '⏳ Waiting for previous downloads...'}\n\n"
-            f"Use `/queue` to view your queue.",
-            parse_mode="markdown",
-        )
-
     hm = await m.reply(
         "Sending you the media wait...",
         buttons=[[Button.inline("❌ Cancel", data="jobx_tap")]],
@@ -2294,12 +2377,15 @@ async def handle_message(m: Message):
 
     # Free user rate limit (configurable)
     # Owner and premium/admins bypass all limits
-    is_owner = (m.sender_id == OWNER_ID)
     if not is_premium and not is_admin(m.sender_id) and not is_owner:
         # Check for custom user limit
         custom_limit = db.get(f"user_limit:{m.sender_id}")
         free_limit = int(custom_limit) if custom_limit else FREE_DOWNLOAD_LIMIT
         if count and int(count) >= free_limit:
+            if from_queue:
+                # Don't lose the queued item — stop draining until limits reset
+                _hold_queue_item(db, m, url)
+                raise QueueHold("rate limit")
             ttl = db.ttl(f"check_{m.sender_id}")
             ttl_text = convert_seconds(ttl) if ttl and ttl > 0 else "1 hour"
             return await hm.edit(
@@ -2726,9 +2812,6 @@ async def handle_message(m: Message):
                         pass
             release_inflight(db, shorturl)
             unregister_job(db, m.sender_id, _job["id"])
-
-            # Process next item in queue
-            await process_next_in_queue(bot, db, m.sender_id)
 
             import json as _json
             history_entry = _json.dumps({
@@ -3723,6 +3806,8 @@ async def admin_commands(m: UpdateNewMessage):
 /mystats — Download statistics
 /ref — Invite friends, earn Premium
 /cancel — Cancel active downloads
+/queue — View queue (pause / resume / remove / clear)
+/queue stats — Global queue stats (admin)
 /setthumb — Reply to image → set thumbnail (premium)
 /removethumb — Remove custom thumbnail
 /lang `<code>` — Set language (en/ne/hi)
