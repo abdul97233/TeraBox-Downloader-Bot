@@ -4,6 +4,23 @@ All notable changes to the TeraBox Downloader Bot.
 
 ---
 
+## v3.10 — Queue Deleted: Direct Sequential Downloads (2026-10-20)
+
+### Download Queue — Removed Entirely
+- Multi-link posts no longer use a queue: the **first link downloads normally, then the remaining links in the same post are downloaded one-by-one automatically**, each as its own normal download message (progress bar → file).
+- Removed: Redis queue (`q:items:*`), `/queue`, `/clearqueue`, queue pause/resume, positions, dedup checks, and all queue drain/retry logic.
+- Chained links skip the 10s anti-spam cooldown (already accepted at request time), but hourly download limits still apply per link.
+
+### Multi-File / Folder Links
+- All files in a folder/multi-file link are **extracted at once** and downloaded in parallel; each completed file is **sent one-by-one** to the chat as soon as it's ready.
+- Multi-file captions now include the original **TeraBox Link** (was missing there).
+- MAX_FILES_PER_REQUEST still caps free users; premium/owner unaffected.
+
+### Fixed
+- Failure of one chained link no longer stops the others (each link errors independently and the chain continues).
+
+---
+
 ## v3.9 — Queue Rewrite, Multi-Link & URL Fixes (2026-10-20)
 
 ### Download Queue — Rewritten From Scratch
